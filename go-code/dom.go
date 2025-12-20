@@ -47,6 +47,7 @@ func poWithNumberingForValidBlocks(entry *Block, valid []bool, ponums []int32) [
 	return order
 }
 
+// finds postorder and reverse postorder within SCC.
 func sccAlternatingOrders(scc []*Block) (exitward, entryward []*Block) {
 	if len(scc) < 2 {
 		return scc, scc
@@ -59,8 +60,8 @@ func sccAlternatingOrders(scc []*Block) (exitward, entryward []*Block) {
 	for _, b := range scc {
 		valid[b.ID] = true
 	}
-	exitward := poWithNumberingForValidBlocks(entry, valid, nil)
-	entryward := poWithNumberingForValidBlocks(exitward[0], valid, nil)
+	exitward = poWithNumberingForValidBlocks(entry, valid, nil)
+	entryward = poWithNumberingForValidBlocks(exitward[0], valid, nil)
 
 	return exitward, entryward
 }
