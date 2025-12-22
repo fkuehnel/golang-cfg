@@ -41,11 +41,12 @@ func (s *regAllocState) computeLive() {
 		return
 	}
 
-	// FALLBACK: Irreducible CFGs
-	// Process all blocks together with 3-pass alternating iteration.
-	// SCC decomposition assumes reducible loops, so skip it here.
-	if s.loopnest.hasIrreducible {
-		s.computeLiveIrreducible(po, live, t)
+	// FALLBACK: Irreducible CFGs or small loopy functions
+	// Traditional iterative algorithm without SCC computation.
+	// Good for small functions where SCC overhead isn't worth it.
+	// The cutoff limit is still to be explored.
+	if s.loopnest.hasIrreducible || (len(po) < 30) {
+		s.computeLiveIterative(po, live, t)
 		return
 	}
 
@@ -74,33 +75,50 @@ func (s *regAllocState) computeLiveAcyclic(po []*Block, live, t *sparseMapPos) {
 	s.computeDesired()
 }
 
-// computeLiveIrreducible handles irreducible CFGs by iterating over all blocks.
-// Uses 3-pass alternating traversal based on empirical convergence findings.
-func (s *regAllocState) computeLiveIrreducible(po []*Block, live, t *sparseMapPos) {
+// computeLiveIterative handles irreducible CFGs or small loopy functions
+// using traditional iteration until convergence. No SCC computation is done.
+// This is the fallback path that matches the original algorithm behavior.
+func (s *regAllocState) computeLiveIterative(po []*Block, live, t *sparseMapPos) {
 	f := s.f
 	rematIDs := make([]ID, 0, 64)
 
-	// Compute reverse postorder for alternating passes
-	rpo := make([]*Block, len(po))
-	for i, b := range po {
-		rpo[len(po)-1-i] = b
+	// Set up loop liveness tracking for post-processing
+	var loopLiveIn map[*loop][]liveInfo
+	var numCalls []int32
+	if len(s.loopnest.loops) > 0 && !s.loopnest.hasIrreducible {
+		loopLiveIn = make(map[*loop][]liveInfo)
+		numCalls = f.Cache.allocInt32Slice(f.NumBlocks())
+		defer f.Cache.freeInt32Slice(numCalls)
 	}
 
-	// Three passes with alternating order suffice empirically:
-	//   Pass 1: postorder     (exits → entry)
-	//   Pass 2: rev postorder (entry → exits)
-	//   Pass 3: postorder     (exits → entry)
-	orders := [3][]*Block{po, rpo, po}
-	for _, order := range orders {
-		for _, b := range order {
-			s.processBlock(b, live, t, rematIDs, nil)
+	// Traditional iterative algorithm: Iterate until no changes occur.
+	for iter := 0; ; iter++ {
+		changed := false
+
+		for _, b := range po {
+			if s.processBlock(b, live, t, rematIDs, loopLiveIn) {
+				changed = true
+			}
+		}
+
+		if !changed {
+			break
 		}
 	}
 
 	if f.pass.debug > regDebug {
-		s.debugPrintLive("after 3-pass (irreducible)", f, s.live, s.desired)
+		s.debugPrintLive("after iterative (irreducible/small)", f, s.live, s.desired)
 	}
-	s.computeDesired()
+
+	// irreducible CFGs and functions without loops are already
+	// done, compute their desired registers and return
+	if loopLiveIn == nil {
+		s.computeDesired()
+		return
+	}
+
+	// Post-process: propagate loop liveness through loop bodies
+	s.propagateLoopLiveness(po, live, t, loopLiveIn, numCalls)
 }
 
 // computeLiveWithLoops handles reducible CFGs with loops using SCC decomposition.
@@ -137,7 +155,7 @@ func (s *regAllocState) computeLiveWithLoops(po []*Block, live, t *sparseMapPos)
 		for _, b := range exitward {
 			s.processBlock(b, live, t, rematIDs, loopLiveIn)
 		}
-		// Pass 2: reverse direction (entry → exits)
+		// Pass 2: reverse direction (entry → exits  within SCC)
 		for _, b := range entryward {
 			s.processBlock(b, live, t, rematIDs, loopLiveIn)
 		}
@@ -155,23 +173,21 @@ func (s *regAllocState) computeLiveWithLoops(po []*Block, live, t *sparseMapPos)
 	s.propagateLoopLiveness(po, live, t, loopLiveIn, numCalls)
 }
 
-// processBlock performs the core liveness computation for a single block.
-// This is the inner loop to avoid duplication across strategies.
+// processBlockCore is the shared implementation for block processing.
+// Returns true if any predecessor's live set changed.
 func (s *regAllocState) processBlock(
 	b *Block,
 	live, t *sparseMapPos,
 	rematIDs []ID,
 	loopLiveIn map[*loop][]liveInfo,
-) {
+) bool {
 	// Start with known live values at the end of the block
 	live.clear()
 	for _, e := range s.live[b.ID] {
 		live.set(e.ID, e.dist, e.pos)
 	}
-
 	update := false
-
-	// Arguments to phi nodes in successors are live at this block's out
+	// arguments to phi nodes are live at this blocks out
 	for _, e := range b.Succs {
 		succ := e.b
 		delta := branchDistance(b, succ)
@@ -186,21 +202,20 @@ func (s *regAllocState) processBlock(
 			}
 		}
 	}
-
 	if update {
 		s.live[b.ID] = updateLive(live, s.live[b.ID])
 	}
-
-	// Add len(b.Values) to adjust from end-of-block distance to beginning-of-block distance
+	// Add len(b.Values) to adjust from end-of-block distance
+	// to beginning-of-block distance.
 	c := live.contents()
 	for i := range c {
 		c[i].val += int32(len(b.Values))
 	}
 
 	// Mark control values as live
-	for _, ctrl := range b.ControlValues() {
-		if s.values[ctrl.ID].needReg {
-			live.set(ctrl.ID, int32(len(b.Values)), b.Pos)
+	for _, c := range b.ControlValues() {
+		if s.values[c.ID].needReg {
+			live.set(c.ID, int32(len(b.Values)), b.Pos)
 		}
 	}
 
@@ -209,11 +224,9 @@ func (s *regAllocState) processBlock(
 	for i := len(b.Values) - 1; i >= 0; i-- {
 		v := b.Values[i]
 		live.remove(v.ID)
-
 		if v.Op == OpPhi {
 			continue
 		}
-
 		if opcodeTable[v.Op].call {
 			c := live.contents()
 			for i := range c {
@@ -229,15 +242,14 @@ func (s *regAllocState) processBlock(
 			}
 			rematIDs = rematIDs[:0]
 		}
-
 		for _, a := range v.Args {
 			if s.values[a.ID].needReg {
 				live.set(a.ID, int32(i), v.Pos)
 			}
 		}
 	}
-
-	// Record loop header liveness for later propagation
+	// This is a loop header, save our live-in so that
+	// we can use it to fill in the loop bodies later
 	if loopLiveIn != nil {
 		loop := s.loopnest.b2l[b.ID]
 		if loop != nil && loop.header.ID == b.ID {
@@ -245,7 +257,9 @@ func (s *regAllocState) processBlock(
 		}
 	}
 
-	// Propagate liveness to predecessors
+	// For each predecessor of b, expand its list of live-at-end values.
+	// invariant: live contains the values live at the start of b
+	changed := false
 	for _, e := range b.Preds {
 		p := e.b
 		delta := branchDistance(p, b)
@@ -255,8 +269,9 @@ func (s *regAllocState) processBlock(
 		for _, e := range s.live[p.ID] {
 			t.set(e.ID, e.dist, e.pos)
 		}
-
 		update := false
+
+		// Add new live values from scanning this block.
 		for _, e := range live.contents() {
 			d := e.val + delta
 			if !t.contains(e.key) || d < t.get(e.key) {
@@ -267,8 +282,10 @@ func (s *regAllocState) processBlock(
 
 		if update {
 			s.live[p.ID] = updateLive(t, s.live[p.ID])
+			changed = true
 		}
 	}
+	return changed
 }
 
 // propagateLoopLiveness propagates liveness information through loop bodies.
@@ -281,7 +298,10 @@ func (s *regAllocState) propagateLoopLiveness(
 ) {
 	f := s.f
 
-	// Walk loopnest from outer to inner, adding live-in values from parent loops
+	// Walk the loopnest from outer to inner, adding
+	// all live-in values from their parent. Instead of
+	// a recursive algorithm, iterate in depth order.
+	// TODO(dmo): can we permute the loopnest? can we avoid this copy?
 	loops := slices.Clone(s.loopnest.loops)
 	slices.SortFunc(loops, func(a, b *loop) int {
 		return cmp.Compare(a.depth, b.depth)
@@ -289,7 +309,6 @@ func (s *regAllocState) propagateLoopLiveness(
 
 	loopset := f.newSparseMapPos(f.NumValues())
 	defer f.retSparseMapPos(loopset)
-
 	for _, loop := range loops {
 		if loop.outer == nil {
 			continue
@@ -310,11 +329,14 @@ func (s *regAllocState) propagateLoopLiveness(
 			loopLiveIn[loop] = updateLive(loopset, livein)
 		}
 	}
-
-	// Sentinel for unknown distance (will be computed from successors)
+	// unknownDistance is a sentinel value for when we know a variable
+	// is live at any given block, but we do not yet know how far until it's next
+	// use. The distance will be computed later.
 	const unknownDistance = -1
 
-	// Add live-in values of loop headers to all blocks in their loop
+	// add live-in values of the loop headers to their children.
+	// This includes the loop headers themselves, since they can have values
+	// that die in the middle of the block and aren't live-out
 	for _, b := range po {
 		loop := s.loopnest.b2l[b.ID]
 		if loop == nil {
@@ -336,12 +358,13 @@ func (s *regAllocState) propagateLoopLiveness(
 			s.live[b.ID] = updateLive(loopset, s.live[b.ID])
 		}
 	}
-
 	if f.pass.debug > regDebug {
 		s.debugPrintLive("after loop propagation", f, s.live, s.desired)
 	}
-
-	// Fill in unknown distances from successors
+	// Filling in liveness from loops leaves some blocks with no distance information
+	// Run over them and fill in the information from their successors.
+	// To stabilize faster, we quit when no block has missing values and we only
+	// look at blocks that still have missing values in subsequent iterations
 	unfinishedBlocks := f.Cache.allocBlockSlice(len(po))
 	defer f.Cache.freeBlockSlice(unfinishedBlocks)
 	copy(unfinishedBlocks, po)
