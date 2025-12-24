@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import math
-import re
 from collections import Counter
 from pathlib import Path
 
@@ -9,28 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
-BRACKET_GROUP_RE = re.compile(r"\[([^\[\]]*)\]")  # matches inner [ ... ] groups
-BLOCK_TOKEN_RE = re.compile(r"b\d+")
-
-
-def parse_scc_components(s: str) -> list[list[str]]:
-    """
-    Parse a string like: [[b1] [b6 b4 b10] [b11]]
-    into: [['b1'], ['b6','b4','b10'], ['b11']]
-    """
-    # Find each inner bracket group content
-    groups = BRACKET_GROUP_RE.findall(s)
-    comps: list[list[str]] = []
-    for g in groups:
-        toks = BLOCK_TOKEN_RE.findall(g)
-        if toks:
-            comps.append(toks)
-    return comps
-
-
-def safe_int(x: str) -> int:
-    return int(x.strip())
+from scc_csv_parser import iter_scc_rows, get_scc_files, parse_scc_components
 
 
 def hist_int(series: pd.Series, outpath: Path, title: str, xlabel: str, logx: bool = False):
@@ -41,7 +19,6 @@ def hist_int(series: pd.Series, outpath: Path, title: str, xlabel: str, logx: bo
     plt.figure()
 
     if logx:
-        # Log-spaced bins for integer-ish heavy tails
         xmin = max(1, int(x.min()))
         xmax = int(x.max())
         bins = np.logspace(math.log10(xmin), math.log10(xmax), 50)
@@ -73,110 +50,128 @@ def main():
     outdir = Path(args.outdir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
 
-    files = sorted(indir.glob(args.pattern))
-    if not files:
-        raise SystemExit(f"No files found in {indir} matching {args.pattern}")
+    files = get_scc_files(indir, args.pattern)
 
-    # Per-row stats (kept compact; ~290k rows is fine)
     rows = []
-
-    # Streaming counters for quick headline stats
     n_rows = 0
-    all_singletons = 0
-    one_nontrivial = 0
-
     ctr_nontrivial_count = Counter()
     ctr_one_nontrivial_size = Counter()
-    ctr_largest_scc = Counter()
 
-    for f in files:
-        with f.open("r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # split into 3 fields at most: blocks, clusters, scc_string
-                parts = line.split(",", 2)
-                if len(parts) < 3:
-                    continue
-
-                try:
-                    blocks = safe_int(parts[0])
-                    clusters = safe_int(parts[1])
-                    scc_str = parts[2]
-                except Exception:
-                    continue
-
-                comps = parse_scc_components(scc_str)
-                sizes = [len(c) for c in comps]
-                if not sizes:
-                    continue
-
-                num_scc = len(sizes)
-                total_nodes = sum(sizes)
-                nontriv_sizes = [sz for sz in sizes if sz > 1]
-                num_nontriv = len(nontriv_sizes)
-                largest = max(sizes)
-                nontriv_nodes = sum(nontriv_sizes)
-                frac_nontriv = nontriv_nodes / total_nodes if total_nodes > 0 else 0.0
-
-                is_all_singletons = (num_nontriv == 0)
-                is_one_nontriv = (num_nontriv == 1)
-                one_size = nontriv_sizes[0] if is_one_nontriv else np.nan
-
-                # "merge mass": sum(sz-1) over SCCs, equals blocks-clusters if header matches SCC parsing
-                merge_mass = sum(sz - 1 for sz in sizes)  # = total_nodes - num_scc
-                header_merge = blocks - clusters
-
-                # concentration (Herfindahl index) of SCC sizes within a CFG: sum (sz/total)^2
-                hhi = sum((sz / total_nodes) ** 2 for sz in sizes) if total_nodes > 0 else np.nan
-
-                rows.append({
-                    "file": f.name,
-                    "blocks_hdr": blocks,
-                    "clusters_hdr": clusters,
-                    "blocks_parsed": total_nodes,
-                    "scc_count_parsed": num_scc,
-                    "nontriv_scc_count": num_nontriv,
-                    "largest_scc": largest,
-                    "nontriv_nodes": nontriv_nodes,
-                    "frac_nodes_in_nontriv_scc": frac_nontriv,
-                    "is_all_singletons": is_all_singletons,
-                    "is_one_nontriv": is_one_nontriv,
-                    "one_nontriv_size": one_size,
-                    "merge_mass_parsed": merge_mass,
-                    "merge_mass_header": header_merge,
-                    "hhi_sizes": hhi,
-                })
-
-                # counters
-                n_rows += 1
-                all_singletons += int(is_all_singletons)
-                one_nontrivial += int(is_one_nontriv)
-                ctr_nontrivial_count[num_nontriv] += 1
-                if is_one_nontriv:
-                    ctr_one_nontrivial_size[int(one_size)] += 1
-                ctr_largest_scc[largest] += 1
-
-                if args.max_rows and n_rows >= args.max_rows:
-                    break
+    for file_path, line_num, row in iter_scc_rows(indir, args.pattern):
         if args.max_rows and n_rows >= args.max_rows:
             break
+
+        scc_str = row.structure
+        stripped = scc_str.replace(" ", "")
+
+        # Acyclic CFGs: structure is [] and kernels == blocks
+        if stripped in ("", "[]"):
+            total_nodes = row.blocks
+            num_scc = row.blocks
+            nontriv_sizes = []
+            num_nontriv = 0
+            largest = 1 if row.blocks > 0 else 0
+            nontriv_nodes = 0
+            frac_nontriv = 0.0
+            merge_mass = 0
+            hhi = (1.0 / row.blocks) if row.blocks > 0 else np.nan
+        else:
+            comps = parse_scc_components(scc_str)
+            if not comps:
+                continue
+            sizes_list = [len(c) for c in comps]
+            total_nodes = sum(sizes_list)
+            num_scc = len(sizes_list)
+            nontriv_sizes = [sz for sz in sizes_list if sz > 1]
+            num_nontriv = len(nontriv_sizes)
+            largest = max(sizes_list)
+            nontriv_nodes = sum(nontriv_sizes)
+            frac_nontriv = nontriv_nodes / total_nodes if total_nodes > 0 else 0.0
+            merge_mass = sum(sz - 1 for sz in sizes_list)
+            hhi = sum((sz / total_nodes) ** 2 for sz in sizes_list) if total_nodes > 0 else np.nan
+
+        is_all_singletons = (num_nontriv == 0)
+        is_one_nontriv = (num_nontriv == 1)
+        one_size = nontriv_sizes[0] if is_one_nontriv else np.nan
+        is_loopy = not is_all_singletons  # has at least one cycle
+
+        # For loopy CFGs, count SCCs by size (sizes_list already computed in else block)
+        if is_loopy:
+            num_singleton = sum(1 for sz in sizes_list if sz == 1)
+            num_size2 = sum(1 for sz in sizes_list if sz == 2)
+            num_size3 = sum(1 for sz in sizes_list if sz == 3)
+        else:
+            num_singleton = np.nan
+            num_size2 = np.nan
+            num_size3 = np.nan
+
+        rows.append({
+            "file": file_path.name,
+            "row_number": line_num,
+            "func": row.func,
+            "blocks_hdr": row.blocks,
+            "kernels_hdr": row.kernels,
+            "blocks_parsed": total_nodes,
+            "scc_count_parsed": num_scc,
+            "nontriv_scc_count": num_nontriv,
+            "largest_scc": largest,
+            "nontriv_nodes": nontriv_nodes,
+            "frac_nodes_in_nontriv_scc": frac_nontriv,
+            "is_all_singletons": is_all_singletons,
+            "is_loopy": is_loopy,
+            "is_one_nontriv": is_one_nontriv,
+            "one_nontriv_size": one_size,
+            "num_singleton_scc": num_singleton,
+            "num_size2_scc": num_size2,
+            "num_size3_scc": num_size3,
+            "merge_mass_parsed": merge_mass,
+            "merge_mass_header": row.blocks - row.kernels,
+            "hhi_sizes": hhi,
+        })
+
+        n_rows += 1
+        ctr_nontrivial_count[num_nontriv] += 1
+        if is_one_nontriv:
+            ctr_one_nontrivial_size[int(one_size)] += 1
 
     df = pd.DataFrame(rows)
     if df.empty:
         raise SystemExit("No valid rows parsed.")
 
-    # Headline summary
     print(f"Files scanned: {len(files)}")
     print(f"Rows parsed  : {len(df)}")
     print()
-    print(f"No-cycle SCCs (all singletons): {df['is_all_singletons'].mean():.3f}")
-    print(f"Exactly one non-trivial SCC   : {df['is_one_nontriv'].mean():.3f}")
+    n_total = len(df)
+    n_acyclic = df['is_all_singletons'].sum()
+    n_loopy = df['is_loopy'].sum()
+    print(f"Acyclic CFGs (all singleton SCCs): {n_acyclic:>7d}  ({100*n_acyclic/n_total:.2f}%)")
+    print(f"Loopy CFGs (at least one cycle)  : {n_loopy:>7d}  ({100*n_loopy/n_total:.2f}%)")
+    print(f"Exactly one non-trivial SCC      : {int(df['is_one_nontriv'].sum()):>7d}  ({100*df['is_one_nontriv'].mean():.2f}%)")
     print()
 
-    # One-nontrivial size stats
+    # Stats for loopy CFGs only
+    loopy_df = df[df["is_loopy"]].copy()
+    if not loopy_df.empty:
+        n_loopy = len(loopy_df)
+        total_singletons = loopy_df["num_singleton_scc"].sum()
+        total_size2 = loopy_df["num_size2_scc"].sum()
+        total_size3 = loopy_df["num_size3_scc"].sum()
+        total_sccs = loopy_df["scc_count_parsed"].sum()
+
+        print("=== Loopy CFGs only ===")
+        print(f"Total SCCs in loopy CFGs: {int(total_sccs)}")
+        print(f"  Singleton SCCs (size=1): {int(total_singletons):>7d}  ({100*total_singletons/total_sccs:.2f}%)")
+        print(f"  Size-2 SCCs            : {int(total_size2):>7d}  ({100*total_size2/total_sccs:.2f}%)")
+        print(f"  Size-3 SCCs            : {int(total_size3):>7d}  ({100*total_size3/total_sccs:.2f}%)")
+        print()
+
+        # Per-CFG averages
+        print("Per loopy CFG averages:")
+        print(f"  Avg singleton SCCs: {loopy_df['num_singleton_scc'].mean():.2f}")
+        print(f"  Avg size-2 SCCs   : {loopy_df['num_size2_scc'].mean():.2f}")
+        print(f"  Avg size-3 SCCs   : {loopy_df['num_size3_scc'].mean():.2f}")
+        print()
+
     one_df = df[df["is_one_nontriv"]].copy()
     if not one_df.empty:
         s = one_df["one_nontriv_size"].astype(int)
@@ -192,7 +187,6 @@ def main():
         })
         print()
 
-    # Useful structural summaries
     print("Non-trivial SCC count per CFG (top buckets):")
     for k in sorted(ctr_nontrivial_count.keys())[:10]:
         print(f"  {k}: {ctr_nontrivial_count[k]}")
@@ -200,8 +194,8 @@ def main():
         print("  ...")
     print()
 
-    print("Fraction of nodes in non-trivial SCCs (overall):")
     frac = df["frac_nodes_in_nontriv_scc"].to_numpy()
+    print("Fraction of nodes in non-trivial SCCs (overall):")
     print({
         "median": float(np.nanpercentile(frac, 50)),
         "p90": float(np.nanpercentile(frac, 90)),
@@ -210,12 +204,11 @@ def main():
     })
     print()
 
-    # Save per-row summary
     summary_csv = outdir / "scc_struct_summary.csv"
     df.to_csv(summary_csv, index=False)
     print(f"Wrote per-row summary: {summary_csv}")
 
-    # Plots (combined, not per-file)
+    # plots
     hist_int(df["nontriv_scc_count"], outdir / "nontriv_scc_count_hist.png",
              "Non-trivial SCC count per CFG", "#non-trivial SCCs", logx=False)
 
