@@ -97,8 +97,8 @@ func sccAlternatingOrders(scc []*Block) (exitward, entryward []*Block) {
 	for _, b := range scc {
 		valid[b.ID] = true
 	}
-	exitward = poWithNumberingForValidBlocks(entry, valid, nil)
-	entryward = poWithNumberingForValidBlocks(exitward[0], valid, nil)
+	entryward = poWithNumberingForValidBlocks(entry, valid, nil)
+	exitward = poWithNumberingForValidBlocks(exitward[0], valid, nil)
 
-	return exitward, entryward
+	return entryward, exitward
 }

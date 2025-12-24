@@ -96,20 +96,15 @@ func (s *regAllocState) computeLiveWithSccs(po []*Block, live, t *sparseMapPos) 
 		// NON-TRIVIAL SCC: Apply 3-pass algorithm with alternating order
 		// Empirical finding: ALL SCCs in our 290k-function dataset converge
 		// in exactly 3 passes with alternating traversal order.
-		exitward, entryward := sccAlternatingOrders(scc)
+		entryward, exitward := sccAlternatingOrders(scc)
 
 		// processBlock → populates s.live[].dist (distances to next use)
 		// Pass 1: postorder (exits → entry direction)
-		for _, b := range exitward {
-			s.processBlock(b, live, t, rematIDs)
-		}
-		// Pass 2: reverse direction (entry → exits  within SCC)
-		for _, b := range entryward {
-			s.processBlock(b, live, t, rematIDs)
-		}
+		// Pass 2: reverse direction (entry → exits within SCC)
 		// Pass 3: postorder again
-		for _, b := range exitward {
-			s.processBlock(b, live, t, rematIDs)
+		s.processBlocksWithOrder(entryward, live, t, rematIDs)
+		if s.processBlocksWithOrder(exitward, live, t, rematIDs) {
+			s.processBlocksWithOrder(entryward, live, t, rematIDs)
 		}
 
 		// We believe that we do not need a propagateLoopLiveness,
@@ -230,6 +225,22 @@ func (s *regAllocState) processBlock(
 
 		if update {
 			s.live[p.ID] = updateLive(t, s.live[p.ID])
+			changed = true
+		}
+	}
+	return changed
+}
+
+// processBlocksWithOrder computes liveness for blocks in the given order.
+// Returns true if any predecessor's live set changed.
+func (s *regAllocState) processBlocksWithOrder(
+	order []*Block,
+	live, t *sparseMapPos,
+	rematIDs []ID,
+) bool {
+	changed := false
+	for _, b := range order {
+		if s.processBlock(b, live, t, rematIDs) {
 			changed = true
 		}
 	}
