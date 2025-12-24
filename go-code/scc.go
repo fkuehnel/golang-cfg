@@ -30,65 +30,64 @@ import "iter"
 //
 // Example:
 //
-//	Given:  b1 → b2, b2 → [b3, b4], b3 → b2, b4 → b5
-//	Result: [[b1], [b2, b3], [b4], [b5]]
+//  Given:  b1 → b2, b2 → [b3, b4], b3 → b2, b4 → b5
+//  Result: [[b1], [b2, b3], [b4], [b5]]
 //
 // The second pass uses BFS with reversed edges for simplicity.
+// SCCs yields SCCs in topological order of the condensation DAG.
 func (f *Func) SCCs() iter.Seq[[]*Block] {
-	return func(yield func([]*Block) bool) {
-		// First DFS pass: compute postorder on original edges.
-		// The last element is the function entry block.
-		po := f.postorder()
+    return func(yield func([]*Block) bool) {
+        po := f.postorder()
 
-		// Track visited blocks and filter to reachable only.
-		seen := make([]bool, f.NumBlocks())
-		reachable := make([]bool, f.NumBlocks())
-		for _, b := range po {
-			reachable[b.ID] = true
-		}
+        // Use cached slices instead of allocating
+        seen := f.Cache.allocBoolSlice(f.NumBlocks())
+        defer f.Cache.freeBoolSlice(seen)
+        reachable := f.Cache.allocBoolSlice(f.NumBlocks())
+        defer f.Cache.freeBoolSlice(reachable)
+        queue := f.Cache.allocBlockSlice(len(po))
+        defer f.Cache.freeBlockSlice(queue)
 
-		// Second pass: traverse reversed edges in reverse postorder.
-		// Each connected component found is an SCC.
-		queue := make([]*Block, 0, len(po))
+        for _, b := range po {
+            reachable[b.ID] = true
+        }
+        // Reuse queue across iterations
+        queue = queue[:0]
 
-		for i := len(po) - 1; i >= 0; i-- {
-			leader := po[i]
-			if seen[leader.ID] {
-				continue
-			}
+        for i := len(po) - 1; i >= 0; i-- {
+            leader := po[i]
+            if seen[leader.ID] {
+                continue
+            }
 
-			// BFS to find all blocks in this SCC.
-			scc := make([]*Block, 0, 4)
-			queue = append(queue, leader)
-			seen[leader.ID] = true
+            scc := make([]*Block, 0, 4)
+            queue = append(queue[:0], leader) // Reuse queue
+            seen[leader.ID] = true
 
-			for len(queue) > 0 {
-				b := queue[0]
-				queue = queue[1:]
-				scc = append(scc, b)
-
-				for _, e := range b.Preds {
-					pred := e.b
-					if reachable[pred.ID] && !seen[pred.ID] {
-						seen[pred.ID] = true
-						queue = append(queue, pred)
-					}
-				}
-			}
-
-			if !yield(scc) {
-				return
-			}
-		}
-	}
+            for len(queue) > 0 {
+                b := queue[0]
+                queue = queue[1:]
+                scc = append(scc, b)
+                for _, e := range b.Preds {
+                    pred := e.b
+                    if reachable[pred.ID] && !seen[pred.ID] {
+                        seen[pred.ID] = true
+                        queue = append(queue, pred)
+                    }
+                }
+            }
+            if !yield(scc) {
+                return
+            }
+        }
+    }
 }
 
 // sccPartition returns all SCCs as a slice for callers that need random access.
 // Prefer [Func.SCCs] when iterating once.
 func sccPartition(f *Func) [][]*Block {
-	var result [][]*Block
-	for scc := range f.SCCs() {
-		result = append(result, scc)
-	}
-	return result
+    var result [][]*Block
+    for scc := range f.SCCs() {
+        result = append(result, scc)
+    }
+    return result
 }

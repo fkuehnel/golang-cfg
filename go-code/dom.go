@@ -1,3 +1,23 @@
+/ Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package ssa
+
+// This file contains code to compute the dominator tree
+// of a control-flow graph.
+
+// postorder computes a postorder traversal ordering for the
+// basic blocks in f. Unreachable blocks will not appear.
+func postorder(f *Func) []*Block {
+	return postorderWithNumbering(f, nil)
+}
+
+type blockAndIndex struct {
+	b     *Block
+	index int // index is the number of successor edges of b that have already been explored.
+}
+
 // postorderWithNumbering provides a DFS postordering.
 // This seems to make loop-finding more robust.
 func postorderWithNumbering(f *Func, ponums []int32) []*Block {
@@ -47,16 +67,33 @@ func poWithNumberingForValidBlocks(entry *Block, valid []bool, ponums []int32) [
 	return order
 }
 
+// intersect finds the closest dominator of both b and c.
+// It requires a postorder numbering of all the blocks.
+func intersect(b, c *Block, postnum []int, idom []*Block) *Block {
+	// TODO: This loop is O(n^2). It used to be used in nilcheck,
+	// see BenchmarkNilCheckDeep*.
+	for b != c {
+		if postnum[b.ID] < postnum[c.ID] {
+			b = idom[b.ID]
+		} else {
+			c = idom[c.ID]
+		}
+	}
+	return b
+}
+
 // finds postorder and reverse postorder within SCC.
 func sccAlternatingOrders(scc []*Block) (exitward, entryward []*Block) {
-	if len(scc) < 2 {
-		return scc, scc
+	if len(scc) == 2 {
+		// Trivial case: just swap order
+		return scc, []*Block{scc[1], scc[0]}
 	}
 	entry := scc[0]
 	f := entry.Func
 
 	// limit the graph to only blocks within the SCC
-	valid := make([]bool, f.NumBlocks())
+	valid := f.Cache.allocBoolSlice(f.NumBlocks())
+	defer f.Cache.freeBoolSlice(valid)
 	for _, b := range scc {
 		valid[b.ID] = true
 	}
