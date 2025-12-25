@@ -993,307 +993,232 @@ func buildIrreducibleChain(tb testing.TB, numRegions int) *Func {
 // REAL LIFE CFG EXAMPLES
 // =============================================================================
 
-// buildGoldenSHA1TestCFG builds the CFG from TestGolden in crypto/sha1
+// buildHeapSortCFG builds the CFG from sort.heapSort (pdqsort helper)
 // This has:
-// - Outer loop (b2 -> b4 -> b2) iterating over golden test cases
-// - Inner loop (b17 -> b19 -> b17) for j=0..3
-// - 5 type-assertion mini-loops
-// - Multiple conditional branches and phi nodes
-func buildGoldenSHA1TestCFG(c *Conf) *Func {
+// - Outer loop (b2 -> b4 -> b2) for j iterations
+// - Inner loop (b6 -> b8 -> b6) for siftDown i iterations
+// - Heapify down loop (b18 -> b20 -> b18)
+// - Heapify up loop (b26 -> b28 -> b26)
+// - Multiple conditional branches and early returns
+func buildHeapSortCFG(c *Conf) *Func {
 	ptrType := c.config.Types.BytePtr
 	intType := c.config.Types.Int
 	memType := types.TypeMem
 	boolType := c.config.Types.Bool
 
 	fun := c.Fun("b1",
-		// Entry block
+		// Entry block - function arguments
 		Bloc("b1",
+			Valu("a", OpArg, intType, 0, nil),
+			Valu("b", OpArg, intType, 0, nil),
+			Valu("data_less", OpArg, ptrType, 0, nil),
+			Valu("data_swap", OpArg, ptrType, 0, nil),
 			Valu("mem", OpInitMem, memType, 0, nil),
-			Valu("sp", OpSP, ptrType, 0, nil),
-			Valu("sb", OpSB, ptrType, 0, nil),
+			Valu("zero_bool", OpConstBool, boolType, 0, nil),
 			Valu("zero_int", OpConst64, intType, 0, nil),
-			Valu("zero_ptr", OpConstNil, ptrType, 0, nil),
-			Goto("b2")),
-
-		// Main loop header - iterates over golden test cases
-		Bloc("b2",
-			Valu("i", OpPhi, intType, 0, nil, "zero_int", "i_inc"),
-			Valu("mem2", OpPhi, memType, 0, nil, "mem", "mem930"),
-			Valu("cmp_i", OpLess64, boolType, 0, nil, "i", "golden_len"),
-			Valu("golden_len", OpConst64, intType, 10, nil), // simulated length
-			If("cmp_i", "b8", "b5")),
-
-		// Process test case - check sum result
-		Bloc("b8",
-			Valu("cmp_ne", OpNeq64, boolType, 0, nil, "i", "zero_int"),
-			If("cmp_ne", "b105", "b12")),
-
-		Bloc("b105",
-			Goto("b13")),
-
-		Bloc("b12",
-			Valu("mem_eq", OpLoad, boolType, 0, nil, "sp", "mem2"),
-			If("mem_eq", "b86", "b90")),
-
-		Bloc("b86",
-			Goto("b16")),
-
-		Bloc("b90",
-			Goto("b13")),
-
-		// Error path - call Fatalf
-		Bloc("b13",
-			Valu("mem13", OpStaticCall, memType, 0, nil, "mem2"),
-			Goto("b16")),
-
-		// Setup digest and enter inner loop
-		Bloc("b16",
-			Valu("mem16", OpPhi, memType, 0, nil, "mem2", "mem13"),
-			Valu("digest", OpStaticCall, ptrType, 0, nil, "mem16"),
-			Valu("mem16b", OpStaticCall, memType, 0, nil, "mem16"),
-			Goto("b17")),
-
-		// Inner loop header - j = 0..3
-		Bloc("b17",
-			Valu("j", OpPhi, intType, 0, nil, "zero_int", "j_inc"),
-			Valu("mem17", OpPhi, memType, 0, nil, "mem16b", "mem875"),
-			Valu("four", OpConst64, intType, 4, nil),
-			Valu("cmp_j", OpLess64, boolType, 0, nil, "j", "four"),
-			If("cmp_j", "b25", "b4")),
-
-		// Branch on j value
-		Bloc("b25",
 			Valu("one", OpConst64, intType, 1, nil),
-			Valu("cmp_j_le1", OpLeq64, boolType, 0, nil, "j", "one"),
-			If("cmp_j_le1", "b35", "b24")),
-
-		// j <= 1: typeAssert.0 path
-		Bloc("b35",
-			Valu("type_ptr0", OpLoad, ptrType, 0, nil, "sb", "mem17"),
-			Goto("b37")),
-
-		// j > 1: check j == 2
-		Bloc("b24",
 			Valu("two", OpConst64, intType, 2, nil),
-			Valu("cmp_j_eq2", OpEq64, boolType, 0, nil, "j", "two"),
-			If("cmp_j_eq2", "b48", "b29")),
-
-		// j == 2: typeAssert.1 path
-		Bloc("b48",
-			Goto("b50")),
-
-		// j > 2: check j == 3
-		Bloc("b29",
-			Valu("three", OpConst64, intType, 3, nil),
-			Valu("cmp_j_eq3", OpEq64, boolType, 0, nil, "j", "three"),
-			If("cmp_j_eq3", "b72", "b22")),
-
-		// j == 3: typeAssert.3 path
-		Bloc("b72",
-			Goto("b74")),
-
-		// j > 3 (shouldn't happen): direct to b103
-		Bloc("b22",
-			Goto("b103")),
-
-		// Back edge for outer loop
-		Bloc("b4",
-			Valu("i_inc", OpAdd64, intType, 0, nil, "i", "one"),
+			Valu("five", OpConst64, intType, 5, nil),
+			Valu("fifty", OpConst64, intType, 50, nil),
+			Valu("i_init", OpAdd64, intType, 0, nil, "a", "one"),
 			Goto("b2")),
 
-		// Type assertion loop 0: b37 -> b38 -> b73 -> b37
-		Bloc("b37",
-			Valu("ta0_ptr", OpPhi, ptrType, 0, nil, "type_ptr0", "ta0_ptr_inc"),
-			Valu("ta0_found", OpEq64, boolType, 0, nil, "ta0_ptr", "zero_ptr"),
-			If("ta0_found", "b39", "b38")),
+		// Outer loop header - j < 5
+		Bloc("b2",
+			Valu("j", OpPhi, intType, 0, nil, "zero_int", "j_inc_outer"),
+			Valu("mem2", OpPhi, memType, 0, nil, "mem", "mem4"),
+			Valu("i_outer", OpPhi, intType, 0, nil, "i_init", "i6"),
+			Valu("cmp_j_5", OpLess64, boolType, 0, nil, "j", "five"),
+			If("cmp_j_5", "b3", "b5")),
 
-		Bloc("b38",
-			Valu("ta0_ptr_inc", OpAdd64, ptrType, 0, nil, "ta0_ptr", "one"),
-			Valu("ta0_nz", OpNeq64, boolType, 0, nil, "ta0_ptr", "zero_ptr"),
-			If("ta0_nz", "b73", "b40")),
+		// Continue to inner loop
+		Bloc("b3",
+			Goto("b6")),
 
-		Bloc("b73",
-			Goto("b37")),
-
-		Bloc("b40",
-			Valu("mem40", OpStaticCall, memType, 0, nil, "mem17"),
-			Goto("b41")),
-
-		Bloc("b39",
-			Valu("ta0_result", OpLoad, ptrType, 0, nil, "ta0_ptr", "mem17"),
-			Goto("b41")),
-
-		Bloc("b41",
-			Valu("mem41", OpPhi, memType, 0, nil, "mem40", "mem17"),
-			Valu("ta0_final", OpPhi, ptrType, 0, nil, "ta0_result", "ta0_result"),
-			Valu("mem41b", OpStaticCall, memType, 0, nil, "mem41"),
-			Goto("b103")),
-
-		// Type assertion loop 1: b50 -> b51 -> b69 -> b50
-		Bloc("b50",
-			Valu("ta1_ptr", OpPhi, ptrType, 0, nil, "zero_ptr", "ta1_ptr_inc"),
-			Valu("ta1_found", OpEq64, boolType, 0, nil, "ta1_ptr", "zero_ptr"),
-			If("ta1_found", "b52", "b51")),
-
-		Bloc("b51",
-			Valu("ta1_ptr_inc", OpAdd64, ptrType, 0, nil, "ta1_ptr", "one"),
-			Valu("ta1_nz", OpNeq64, boolType, 0, nil, "ta1_ptr", "zero_ptr"),
-			If("ta1_nz", "b69", "b53")),
-
-		Bloc("b69",
-			Goto("b50")),
-
-		Bloc("b53",
-			Valu("mem53", OpStaticCall, memType, 0, nil, "mem17"),
-			Goto("b59")),
-
-		Bloc("b52",
-			Valu("ta1_result", OpLoad, ptrType, 0, nil, "ta1_ptr", "mem17"),
-			Goto("b59")),
-
-		Bloc("b59",
-			Valu("mem59", OpPhi, memType, 0, nil, "mem53", "mem17"),
-			Valu("mem59b", OpStaticCall, memType, 0, nil, "mem59"),
-			Goto("b61")),
-
-		// Type assertion loop 2: b61 -> b62 -> b60 -> b61
-		Bloc("b61",
-			Valu("ta2_ptr", OpPhi, ptrType, 0, nil, "zero_ptr", "ta2_ptr_inc"),
-			Valu("ta2_found", OpEq64, boolType, 0, nil, "ta2_ptr", "zero_ptr"),
-			If("ta2_found", "b63", "b62")),
-
-		Bloc("b62",
-			Valu("ta2_ptr_inc", OpAdd64, ptrType, 0, nil, "ta2_ptr", "one"),
-			Valu("ta2_nz", OpNeq64, boolType, 0, nil, "ta2_ptr", "zero_ptr"),
-			If("ta2_nz", "b60", "b64")),
-
-		Bloc("b60",
-			Goto("b61")),
-
-		Bloc("b64",
-			Valu("mem64", OpStaticCall, memType, 0, nil, "mem59b"),
-			Goto("b65")),
-
-		Bloc("b63",
-			Valu("ta2_result", OpLoad, ptrType, 0, nil, "ta2_ptr", "mem59b"),
-			Goto("b65")),
-
-		Bloc("b65",
-			Valu("mem65", OpPhi, memType, 0, nil, "mem64", "mem59b"),
-			Valu("mem65b", OpStaticCall, memType, 0, nil, "mem65"),
-			Goto("b103")),
-
-		// Type assertion loop 3: b74 -> b75 -> b56 -> b74
-		Bloc("b74",
-			Valu("ta3_ptr", OpPhi, ptrType, 0, nil, "zero_ptr", "ta3_ptr_inc"),
-			Valu("ta3_found", OpEq64, boolType, 0, nil, "ta3_ptr", "zero_ptr"),
-			If("ta3_found", "b76", "b75")),
-
-		Bloc("b75",
-			Valu("ta3_ptr_inc", OpAdd64, ptrType, 0, nil, "ta3_ptr", "one"),
-			Valu("ta3_nz", OpNeq64, boolType, 0, nil, "ta3_ptr", "zero_ptr"),
-			If("ta3_nz", "b56", "b77")),
-
-		Bloc("b56",
-			Goto("b74")),
-
-		Bloc("b77",
-			Valu("mem77", OpStaticCall, memType, 0, nil, "mem17"),
-			Goto("b89")),
-
-		Bloc("b76",
-			Valu("ta3_result", OpLoad, ptrType, 0, nil, "ta3_ptr", "mem17"),
-			Goto("b89")),
-
-		Bloc("b89",
-			Valu("mem89", OpPhi, memType, 0, nil, "mem77", "mem17"),
-			Valu("mem89b", OpStaticCall, memType, 0, nil, "mem89"),
-			Goto("b91")),
-
-		// Type assertion loop 4: b91 -> b92 -> b54 -> b91
-		Bloc("b91",
-			Valu("ta4_ptr", OpPhi, ptrType, 0, nil, "zero_ptr", "ta4_ptr_inc"),
-			Valu("ta4_found", OpEq64, boolType, 0, nil, "ta4_ptr", "zero_ptr"),
-			If("ta4_found", "b93", "b92")),
-
-		Bloc("b92",
-			Valu("ta4_ptr_inc", OpAdd64, ptrType, 0, nil, "ta4_ptr", "one"),
-			Valu("ta4_nz", OpNeq64, boolType, 0, nil, "ta4_ptr", "zero_ptr"),
-			If("ta4_nz", "b54", "b94")),
-
-		Bloc("b54",
-			Goto("b91")),
-
-		Bloc("b94",
-			Valu("mem94", OpStaticCall, memType, 0, nil, "mem89b"),
-			Goto("b102")),
-
-		Bloc("b93",
-			Valu("ta4_result", OpLoad, ptrType, 0, nil, "ta4_ptr", "mem89b"),
-			Goto("b102")),
-
-		Bloc("b102",
-			Valu("mem102", OpPhi, memType, 0, nil, "mem94", "mem89b"),
-			Valu("mem102b", OpStaticCall, memType, 0, nil, "mem102"),
-			Goto("b103")),
-
-		// Merge point for all j paths - check result and loop back
-		Bloc("b103",
-			Valu("mem103", OpPhi, memType, 0, nil, "mem17", "mem41b", "mem65b", "mem102b"),
-			Valu("sum_ptr", OpPhi, ptrType, 0, nil, "zero_ptr", "zero_ptr", "zero_ptr", "zero_ptr"),
-			Valu("sum_len", OpPhi, intType, 0, nil, "zero_int", "zero_int", "zero_int", "zero_int"),
-			Valu("cmp_sum", OpNeq64, boolType, 0, nil, "sum_len", "zero_int"),
-			If("cmp_sum", "b49", "b107")),
-
-		Bloc("b49",
-			Goto("b108")),
-
-		Bloc("b107",
-			Valu("sum_eq", OpLoad, boolType, 0, nil, "sp", "mem103"),
-			If("sum_eq", "b85", "b45")),
-
-		Bloc("b85",
-			Goto("b19")),
-
-		Bloc("b45",
-			Goto("b108")),
-
-		// Error path for sum mismatch
-		Bloc("b108",
-			Valu("mem108", OpStaticCall, memType, 0, nil, "mem103"),
-			Goto("b19")),
-
-		// Reset digest and loop back
-		Bloc("b19",
-			Valu("mem875", OpPhi, memType, 0, nil, "mem103", "mem108"),
-			Valu("j_inc", OpAdd64, intType, 0, nil, "j", "one"),
-			Valu("mem930", OpStaticCall, memType, 0, nil, "mem875"),
-			Goto("b17")),
-
-		// Exit
+		// Exit - return false
 		Bloc("b5",
+			Valu("ret_false", OpConstBool, boolType, 0, nil),
 			Exit("mem2")),
+
+		// Inner loop header - siftDown: b > i
+		Bloc("b6",
+			Valu("i6", OpPhi, intType, 0, nil, "i_outer", "i_inc"),
+			Valu("mem6", OpPhi, memType, 0, nil, "mem2", "mem10"),
+			Valu("cmp_b_i", OpLess64, boolType, 0, nil, "i6", "b"),
+			If("cmp_b_i", "b11", "b24")),
+
+		// Fallthrough when b <= i
+		Bloc("b24",
+			Goto("b10")),
+
+		// Call data.Less(i, i-1)
+		Bloc("b11",
+			Valu("i_minus_1", OpSub64, intType, 0, nil, "i6", "one"),
+			Valu("less_ptr", OpLoad, ptrType, 0, nil, "data_less", "mem6"),
+			Valu("call_less", OpClosureCall, types.TypeResultMem, 0, nil, "less_ptr", "data_less", "i6", "i_minus_1", "mem6"),
+			Valu("less_result", OpSelectN, boolType, 0, nil, "call_less"),
+			Valu("mem11", OpSelectN, memType, 1, nil, "call_less"),
+			Valu("not_less", OpNot, boolType, 0, nil, "less_result"),
+			Goto("b10")),
+
+		// Merge and check result
+		Bloc("b10",
+			Valu("mem10", OpPhi, memType, 0, nil, "mem6", "mem11"),
+			Valu("should_continue", OpPhi, boolType, 0, nil, "zero_bool", "not_less"),
+			If("should_continue", "b8", "b9")),
+
+		// Continue inner loop - increment i
+		Bloc("b8",
+			Valu("i_inc", OpAdd64, intType, 0, nil, "i6", "one"),
+			Goto("b6")),
+
+		// Exit inner loop - check if done
+		Bloc("b9",
+			Valu("cmp_eq", OpEq64, boolType, 0, nil, "b", "i6"),
+			If("cmp_eq", "b13", "b12")),
+
+		// Return true - found
+		Bloc("b13",
+			Valu("true_val", OpConstBool, boolType, 1, nil),
+			Exit("mem10")),
+
+		// Check threshold: b - a < 50
+		Bloc("b12",
+			Valu("diff", OpSub64, intType, 0, nil, "b", "a"),
+			Valu("cmp_50", OpLess64, boolType, 0, nil, "diff", "fifty"),
+			If("cmp_50", "b15", "b14")),
+
+		// Return false - below threshold
+		Bloc("b15",
+			Exit("mem10")),
+
+		// Above threshold - call swap and continue
+		Bloc("b14",
+			Valu("swap_ptr", OpLoad, ptrType, 0, nil, "data_swap", "mem10"),
+			Valu("i_minus_1_b14", OpSub64, intType, 0, nil, "i6", "one"),
+			Valu("call_swap", OpClosureCall, memType, 0, nil, "swap_ptr", "data_swap", "i6", "i_minus_1_b14", "mem10"),
+			Valu("mem14", OpSelectN, memType, 0, nil, "call_swap"),
+			Valu("diff2", OpSub64, intType, 0, nil, "i6", "a"),
+			Valu("cmp_diff_2", OpLeq64, boolType, 0, nil, "two", "diff2"),
+			If("cmp_diff_2", "b17", "b22")),
+
+		// Path to heapify down loop
+		Bloc("b17",
+			Goto("b18")),
+
+		// Path to heapify up check
+		Bloc("b22",
+			Goto("b16")),
+
+		// Heapify up check: b - i >= 2
+		Bloc("b16",
+			Valu("mem16", OpPhi, memType, 0, nil, "mem14", "mem21"),
+			Valu("diff3", OpSub64, intType, 0, nil, "b", "i6"),
+			Valu("cmp_diff3_2", OpLeq64, boolType, 0, nil, "two", "diff3"),
+			If("cmp_diff3_2", "b25", "b30")),
+
+		// Start heapify up loop
+		Bloc("b25",
+			Valu("j_heapup_init", OpAdd64, intType, 0, nil, "i6", "one"),
+			Goto("b26")),
+
+		// Go to outer loop increment
+		Bloc("b30",
+			Goto("b4")),
+
+		// Outer loop increment
+		Bloc("b4",
+			Valu("mem4", OpPhi, memType, 0, nil, "mem16", "mem29"),
+			Valu("j_inc_outer", OpAdd64, intType, 0, nil, "j", "one"),
+			Goto("b2")),
+
+		// Heapify up loop header
+		Bloc("b26",
+			Valu("j_heapup", OpPhi, intType, 0, nil, "j_heapup_init", "j_heapup_inc"),
+			Valu("mem26", OpPhi, memType, 0, nil, "mem16", "mem28"),
+			Valu("cmp_b_j_heapup", OpLess64, boolType, 0, nil, "j_heapup", "b"),
+			If("cmp_b_j_heapup", "b27", "b32")),
+
+		// Call Less in heapify up
+		Bloc("b27",
+			Valu("less_ptr2", OpLoad, ptrType, 0, nil, "data_less", "mem26"),
+			Valu("j_minus_1", OpSub64, intType, 0, nil, "j_heapup", "one"),
+			Valu("call_less2", OpClosureCall, types.TypeResultMem, 0, nil, "less_ptr2", "data_less", "j_heapup", "j_minus_1", "mem26"),
+			Valu("less_result2", OpSelectN, boolType, 0, nil, "call_less2"),
+			Valu("mem27", OpSelectN, memType, 1, nil, "call_less2"),
+			If("less_result2", "b28", "b31")),
+
+		// Continue heapify up - call swap
+		Bloc("b28",
+			Valu("swap_ptr2", OpLoad, ptrType, 0, nil, "data_swap", "mem27"),
+			Valu("call_swap2", OpClosureCall, memType, 0, nil, "swap_ptr2", "data_swap", "j_heapup", "j_minus_1", "mem27"),
+			Valu("mem28", OpSelectN, memType, 0, nil, "call_swap2"),
+			Valu("j_heapup_inc", OpAdd64, intType, 0, nil, "j_heapup", "one"),
+			Goto("b26")),
+
+		// Exit heapify up - not less
+		Bloc("b31",
+			Goto("b29")),
+
+		// Exit heapify up - j >= b
+		Bloc("b32",
+			Goto("b29")),
+
+		// Merge heapify up exits
+		Bloc("b29",
+			Valu("mem29", OpPhi, memType, 0, nil, "mem26", "mem27"),
+			Goto("b4")),
+
+		// Heapify down loop header
+		Bloc("b18",
+			Valu("j_heapdown", OpPhi, intType, 0, nil, "i_minus_1_b14", "j_heapdown_dec"),
+			Valu("mem18", OpPhi, memType, 0, nil, "mem14", "mem20"),
+			Valu("cmp_j_0", OpLess64, boolType, 0, nil, "zero_int", "j_heapdown"),
+			If("cmp_j_0", "b19", "b7")),
+
+		// Call Less in heapify down
+		Bloc("b19",
+			Valu("less_ptr3", OpLoad, ptrType, 0, nil, "data_less", "mem18"),
+			Valu("j_heapdown_dec", OpSub64, intType, 0, nil, "j_heapdown", "one"),
+			Valu("call_less3", OpClosureCall, types.TypeResultMem, 0, nil, "less_ptr3", "data_less", "j_heapdown", "j_heapdown_dec", "mem18"),
+			Valu("less_result3", OpSelectN, boolType, 0, nil, "call_less3"),
+			Valu("mem19", OpSelectN, memType, 1, nil, "call_less3"),
+			If("less_result3", "b20", "b23")),
+
+		// Continue heapify down - call swap
+		Bloc("b20",
+			Valu("swap_ptr3", OpLoad, ptrType, 0, nil, "data_swap", "mem19"),
+			Valu("call_swap3", OpClosureCall, memType, 0, nil, "swap_ptr3", "data_swap", "j_heapdown", "j_heapdown_dec", "mem19"),
+			Valu("mem20", OpSelectN, memType, 0, nil, "call_swap3"),
+			Goto("b18")),
+
+		// Exit heapify down - not less
+		Bloc("b23",
+			Goto("b21")),
+
+		// Exit heapify down - j <= 0
+		Bloc("b7",
+			Goto("b21")),
+
+		// Merge heapify down exits
+		Bloc("b21",
+			Valu("mem21", OpPhi, memType, 0, nil, "mem18", "mem19"),
+			Goto("b16")),
 	)
 
 	return fun.f
 }
 
-func TestGoldenSHA1CFGStructure(t *testing.T) {
+func TestHeapSortCFGStructure(t *testing.T) {
 	c := testConfig(t)
-	f := buildGoldenSHA1TestCFG(c)
+	f := buildHeapSortCFG(c)
 
-	// Count blocks we actually created
-	expectedBlocks := 56 // Actual count from our Bloc() calls
-	if len(f.Blocks) != expectedBlocks {
-		t.Errorf("expected %d blocks, got %d", expectedBlocks, len(f.Blocks))
+	// Build block index for back-edge detection
+	blockIndex := make(map[*Block]int)
+	for i, b := range f.Blocks {
+		blockIndex[b] = i
 	}
 
-	// Verify entry block is first block
-	if f.Entry != f.Blocks[0] {
-		t.Errorf("expected entry block to be first block")
-	}
-
-	// Count structural properties instead of checking specific names
 	var (
 		exitBlocks int
 		ifBlocks   int
@@ -1302,13 +1227,7 @@ func TestGoldenSHA1CFGStructure(t *testing.T) {
 		backEdges  int
 	)
 
-	blockIndex := make(map[*Block]int)
-	for i, b := range f.Blocks {
-		blockIndex[b] = i
-	}
-
 	for _, b := range f.Blocks {
-		// Count block types by successor count
 		switch len(b.Succs) {
 		case 0:
 			exitBlocks++
@@ -1318,18 +1237,14 @@ func TestGoldenSHA1CFGStructure(t *testing.T) {
 			ifBlocks++
 		}
 
-		// Count phi nodes
 		for _, v := range b.Values {
 			if v.Op == OpPhi {
 				phiCount++
 			}
 		}
 
-		// Count back-edges (successor with lower index = back edge in RPO-ish order)
 		for _, e := range b.Succs {
-			succIdx := blockIndex[e.Block()]
-			myIdx := blockIndex[b]
-			if succIdx < myIdx {
+			if blockIndex[e.Block()] < blockIndex[b] {
 				backEdges++
 			}
 		}
@@ -1343,24 +1258,481 @@ func TestGoldenSHA1CFGStructure(t *testing.T) {
 	t.Logf("  Phi nodes: %d", phiCount)
 	t.Logf("  Back-edges: %d", backEdges)
 
-	// Verify expected structural properties
-	if exitBlocks != 1 {
-		t.Errorf("expected 1 exit block, got %d", exitBlocks)
-	}
-
-	// We expect 7 back-edges:
-	// - b4 -> b2 (outer loop)
-	// - b19 -> b17 (inner loop)
-	// - b73 -> b37, b69 -> b50, b60 -> b61, b56 -> b74, b54 -> b91 (5 type-assert loops)
-	expectedBackEdges := 7
+	// Expected: 6 back-edges
+	// - b4 -> b2 (outer j loop)
+	// - b8 -> b6 (inner i/siftDown loop)
+	// - b20 -> b18 (heapify down loop)
+	// - b28 -> b26 (heapify up loop)
+	// - b21 -> b16 (heapify down exit to heapify up check)
+	// - b29 -> b4 (heapify up exit to outer loop)
+	expectedBackEdges := 6
 	if backEdges != expectedBackEdges {
 		t.Errorf("expected %d back-edges, got %d", expectedBackEdges, backEdges)
 	}
 
-	// Verify we have a reasonable number of conditional branches
-	// From the CFG: many If blocks for the conditionals
-	if ifBlocks < 19 {
-		t.Errorf("expected at least 19 if-blocks, got %d", ifBlocks)
+	// Expected: 3 exit blocks (b5, b13, b15)
+	expectedExits := 3
+	if exitBlocks != expectedExits {
+		t.Errorf("expected %d exit blocks, got %d", expectedExits, exitBlocks)
+	}
+}
+
+// buildFloatPrecCFG builds the CFG from math/big.(*Rat).FloatPrec
+// This has 4 separate loops connected in sequence:
+// - Bit-counting loop (b17 → b19 → b17)
+// - Tab-building loop (b29 → b88 → b29)
+// - Descending i-loop (b40 → b42 → b40)
+// - p5 division loop (b65 → b66 → b65)
+func buildFloatPrecCFG(c *Conf) *Func {
+	ptrType := c.config.Types.BytePtr
+	intType := c.config.Types.Int
+	memType := types.TypeMem
+	boolType := c.config.Types.Bool
+
+	fun := c.Fun("b2",
+		// Entry block
+		Bloc("b2",
+			Valu("x", OpArg, ptrType, 0, nil),
+			Valu("mem", OpInitMem, memType, 0, nil),
+			Valu("sp", OpSP, ptrType, 0, nil),
+			Valu("sb", OpSB, ptrType, 0, nil),
+			Valu("zero_int", OpConst64, intType, 0, nil),
+			Valu("zero_bool", OpConstBool, boolType, 0, nil),
+			Valu("one", OpConst64, intType, 1, nil),
+			Valu("type_ptr", OpLoad, ptrType, 0, nil, "sb", "mem"),
+			Valu("pool_result", OpStaticCall, ptrType, 0, nil, "mem"),
+			Valu("mem2", OpStaticCall, memType, 0, nil, "mem"),
+			Valu("cmp_type", OpEq64, boolType, 0, nil, "pool_result", "type_ptr"),
+			If("cmp_type", "b3", "b4")),
+
+		// Pool returned correct type
+		Bloc("b3",
+			Goto("b5")),
+
+		// Pool returned nil/wrong type
+		Bloc("b4",
+			Valu("nil_stack", OpConstNil, ptrType, 0, nil),
+			Goto("b5")),
+
+		// Merge pool check
+		Bloc("b5",
+			Valu("stack", OpPhi, ptrType, 0, nil, "pool_result", "nil_stack"),
+			Valu("has_stack", OpNeq64, boolType, 0, nil, "stack", "nil_stack"),
+			If("has_stack", "b71", "b7")),
+
+		// Has existing stack
+		Bloc("b71",
+			Goto("b8")),
+
+		// Need to allocate stack
+		Bloc("b7",
+			Valu("new_stack", OpStaticCall, ptrType, 0, nil, "mem2"),
+			Valu("mem7", OpStaticCall, memType, 0, nil, "mem2"),
+			Goto("b8")),
+
+		// Merge stack allocation
+		Bloc("b8",
+			Valu("mem8", OpPhi, memType, 0, nil, "mem2", "mem7"),
+			Valu("stk", OpPhi, ptrType, 0, nil, "stack", "new_stack"),
+			Valu("denom_len", OpLoad, intType, 0, nil, "x", "mem8"),
+			Valu("denom_zero", OpEq64, boolType, 0, nil, "denom_len", "zero_int"),
+			If("denom_zero", "b11", "b9")),
+
+		// Denominator is zero - create unit denominator
+		Bloc("b11",
+			Valu("unit_ptr", OpStaticCall, ptrType, 0, nil, "mem8"),
+			Valu("mem11", OpStaticCall, memType, 0, nil, "mem8"),
+			Goto("b13")),
+
+		// Denominator is non-zero
+		Bloc("b9",
+			Valu("denom_ptr", OpLoad, ptrType, 0, nil, "x", "mem8"),
+			Goto("b13")),
+
+		// Merge denominator
+		Bloc("b13",
+			Valu("mem13", OpPhi, memType, 0, nil, "mem11", "mem8"),
+			Valu("d_ptr", OpPhi, ptrType, 0, nil, "unit_ptr", "denom_ptr"),
+			Valu("d_len", OpLoad, intType, 0, nil, "d_ptr", "mem13"),
+			Valu("d_len_zero", OpEq64, boolType, 0, nil, "d_len", "zero_int"),
+			If("d_len_zero", "b15", "b14")),
+
+		// d.len == 0: skip bit counting, go to main loop
+		Bloc("b15",
+			Valu("p2_init", OpConst64, intType, 0, nil),
+			Goto("b26")),
+
+		// d.len != 0: enter bit counting loop
+		Bloc("b14",
+			Valu("i_init", OpConst64, intType, 0, nil),
+			Goto("b17")),
+
+		// Bit counting loop header
+		Bloc("b17",
+			Valu("i_bit", OpPhi, intType, 0, nil, "i_init", "i_bit_inc"),
+			Valu("cmp_i_len", OpLess64U, boolType, 0, nil, "i_bit", "d_len"),
+			If("cmp_i_len", "b21", "b22")),
+
+		// Check word for trailing zeros
+		Bloc("b21",
+			Valu("word", OpLoad, intType, 0, nil, "d_ptr", "mem13"),
+			Valu("word_zero", OpEq64, boolType, 0, nil, "word", "zero_int"),
+			If("word_zero", "b19", "b25")),
+
+		// Word is zero, continue counting
+		Bloc("b19",
+			Valu("i_bit_inc", OpAdd64, intType, 0, nil, "i_bit", "one"),
+			Goto("b17")),
+
+		// Found non-zero word, compute trailing zeros
+		Bloc("b25",
+			Valu("tz_count", OpCtz64, intType, 0, nil, "word"),
+			Valu("p2_computed", OpAdd64, intType, 0, nil, "tz_count", "i_bit"),
+			Goto("b26")),
+
+		// Bounds check failed (shouldn't happen)
+		Bloc("b22",
+			Exit("mem13")),
+
+		// Main computation entry - start tab building
+		Bloc("b26",
+			Valu("p2", OpPhi, intType, 0, nil, "p2_init", "p2_computed"),
+			Valu("q_ptr_init", OpStaticCall, ptrType, 0, nil, "mem13"),
+			Valu("mem26", OpStaticCall, memType, 0, nil, "mem13"),
+			Valu("f_ptr_init", OpStaticCall, ptrType, 0, nil, "mem26"),
+			Valu("mem26b", OpStaticCall, memType, 0, nil, "mem26"),
+			Goto("b29")),
+
+		// Tab building loop header
+		Bloc("b29",
+			Valu("f_ptr", OpPhi, ptrType, 0, nil, "f_ptr_init", "f_ptr_sqr"),
+			Valu("f_len", OpPhi, intType, 0, nil, "one", "f_len_sqr"),
+			Valu("r_len", OpPhi, intType, 0, nil, "zero_int", "r_len_div"),
+			Valu("r_ptr", OpPhi, ptrType, 0, nil, "q_ptr_init", "r_ptr_div"),
+			Valu("mem29", OpPhi, memType, 0, nil, "mem26b", "mem88"),
+			Valu("tab_ptr", OpPhi, ptrType, 0, nil, "q_ptr_init", "tab_ptr_new"),
+			Valu("tab_len", OpPhi, intType, 0, nil, "zero_int", "tab_len_new"),
+			Valu("tab_cap", OpPhi, intType, 0, nil, "zero_int", "tab_cap_new"),
+			Valu("div_call", OpStaticCall, memType, 0, nil, "mem29"),
+			Valu("r_len_div", OpSelectN, intType, 0, nil, "div_call"),
+			Valu("r_ptr_div", OpSelectN, ptrType, 1, nil, "div_call"),
+			Valu("mem29b", OpSelectN, memType, 2, nil, "div_call"),
+			Valu("r_nonzero", OpNeq64, boolType, 0, nil, "r_len_div", "zero_int"),
+			If("r_nonzero", "b31", "b32")),
+
+		// r != 0: exit tab building, enter i-loop
+		Bloc("b31",
+			Valu("i_loop_init", OpSub64, intType, 0, nil, "tab_len", "one"),
+			Goto("b40")),
+
+		// r == 0: continue building tab
+		Bloc("b32",
+			Valu("tab_len_inc", OpAdd64, intType, 0, nil, "tab_len", "one"),
+			Valu("need_grow", OpLess64U, boolType, 0, nil, "tab_cap", "tab_len_inc"),
+			If("need_grow", "b34", "b51")),
+
+		// No grow needed
+		Bloc("b51",
+			Goto("b30")),
+
+		// Check if need to grow
+		Bloc("b34",
+			Valu("small_tab", OpLeq64, boolType, 0, nil, "tab_len_inc", "one"),
+			If("small_tab", "b36", "b47")),
+
+		// Small tab path
+		Bloc("b36",
+			Valu("already_alloc", OpLoad, boolType, 0, nil, "sp", "mem29b"),
+			If("already_alloc", "b41", "b38")),
+
+		// First allocation
+		Bloc("b38",
+			Valu("new_tab_small", OpStaticCall, ptrType, 0, nil, "mem29b"),
+			Valu("mem38", OpStaticCall, memType, 0, nil, "mem29b"),
+			Valu("cap_small", OpConst64, intType, 1, nil),
+			Goto("b30")),
+
+		// Already allocated
+		Bloc("b41",
+			Goto("b39")),
+
+		// Large tab - need growslice
+		Bloc("b47",
+			Goto("b39")),
+
+		// Grow slice
+		Bloc("b39",
+			Valu("grow_call", OpStaticCall, ptrType, 0, nil, "mem29b"),
+			Valu("new_tab_large", OpSelectN, ptrType, 0, nil, "grow_call"),
+			Valu("new_cap_large", OpSelectN, intType, 1, nil, "grow_call"),
+			Valu("mem39", OpStaticCall, memType, 0, nil, "mem29b"),
+			Goto("b30")),
+
+		// Merge tab allocation paths
+		Bloc("b30",
+			Valu("tab_len_new", OpPhi, intType, 0, nil, "tab_len_inc", "tab_len_inc", "tab_len_inc"),
+			Valu("tab_ptr_new", OpPhi, ptrType, 0, nil, "tab_ptr", "new_tab_small", "new_tab_large"),
+			Valu("mem30", OpPhi, memType, 0, nil, "mem29b", "mem38", "mem39"),
+			Valu("tab_cap_new", OpPhi, intType, 0, nil, "tab_cap", "cap_small", "new_cap_large"),
+			Valu("wb_needed", OpLoad, boolType, 0, nil, "sb", "mem30"),
+			If("wb_needed", "b89", "b85")),
+
+		// No write barrier
+		Bloc("b85",
+			Goto("b88")),
+
+		// Write barrier path
+		Bloc("b89",
+			Valu("wb_call", OpStaticCall, memType, 0, nil, "mem30"),
+			Goto("b88")),
+
+		// Square f and loop back
+		Bloc("b88",
+			Valu("mem88", OpPhi, memType, 0, nil, "mem30", "wb_call"),
+			Valu("sqr_call", OpStaticCall, ptrType, 0, nil, "mem88"),
+			Valu("f_ptr_sqr", OpSelectN, ptrType, 0, nil, "sqr_call"),
+			Valu("f_len_sqr", OpSelectN, intType, 1, nil, "sqr_call"),
+			Goto("b29")),
+
+		// i-loop header (descending through tab)
+		Bloc("b40",
+			Valu("i_loop", OpPhi, intType, 0, nil, "i_loop_init", "i_loop_dec"),
+			Valu("mem40", OpPhi, memType, 0, nil, "mem29b", "mem42"),
+			Valu("p5", OpPhi, intType, 0, nil, "zero_int", "p5_new"),
+			Valu("q_cap_40", OpPhi, intType, 0, nil, "tab_cap", "q_cap_42"),
+			Valu("q_ptr_40", OpPhi, ptrType, 0, nil, "q_ptr_init", "q_ptr_42"),
+			Valu("q_len_40", OpPhi, intType, 0, nil, "tab_len", "q_len_42"),
+			Valu("i_nonneg", OpLeq64, boolType, 0, nil, "zero_int", "i_loop"),
+			If("i_nonneg", "b44", "b43")),
+
+		// Process tab[i]
+		Bloc("b44",
+			Valu("div_call2", OpStaticCall, memType, 0, nil, "mem40"),
+			Valu("t_ptr", OpSelectN, ptrType, 0, nil, "div_call2"),
+			Valu("t_len", OpSelectN, intType, 1, nil, "div_call2"),
+			Valu("r2_len", OpSelectN, intType, 2, nil, "div_call2"),
+			Valu("mem44", OpSelectN, memType, 3, nil, "div_call2"),
+			Valu("r2_zero", OpEq64, boolType, 0, nil, "r2_len", "zero_int"),
+			If("r2_zero", "b48", "b37")),
+
+		// r2 != 0: skip to next iteration
+		Bloc("b37",
+			Goto("b42")),
+
+		// r2 == 0: update p5 and possibly copy
+		Bloc("b48",
+			Valu("shift_amt", OpConst64, intType, 0, nil),
+			Valu("p5_delta", OpLsh64x64, intType, 0, nil, "one", "i_loop"),
+			Valu("p5_inc", OpAdd64, intType, 0, nil, "p5", "p5_delta"),
+			Valu("need_copy", OpLess64, boolType, 0, nil, "q_cap_40", "t_len"),
+			If("need_copy", "b50", "b54")),
+
+		// No copy needed
+		Bloc("b54",
+			Goto("b56")),
+
+		// Need to allocate new slice
+		Bloc("b50",
+			Valu("t_len_one", OpEq64, boolType, 0, nil, "t_len", "one"),
+			If("t_len_one", "b58", "b57")),
+
+		// Allocate size 1
+		Bloc("b58",
+			Valu("alloc1", OpStaticCall, ptrType, 0, nil, "mem44"),
+			Valu("mem58", OpStaticCall, memType, 0, nil, "mem44"),
+			Valu("cap1", OpConst64, intType, 1, nil),
+			Goto("b56")),
+
+		// Allocate larger
+		Bloc("b57",
+			Valu("new_cap", OpAdd64, intType, 0, nil, "t_len", "one"),
+			Valu("alloc_large", OpStaticCall, ptrType, 0, nil, "mem44"),
+			Valu("mem57", OpStaticCall, memType, 0, nil, "mem44"),
+			Goto("b56")),
+
+		// Merge allocation
+		Bloc("b56",
+			Valu("q_len_new", OpPhi, intType, 0, nil, "t_len", "one", "t_len"),
+			Valu("q_ptr_new", OpPhi, ptrType, 0, nil, "q_ptr_40", "alloc1", "alloc_large"),
+			Valu("mem56", OpPhi, memType, 0, nil, "mem44", "mem58", "mem57"),
+			Valu("q_cap_new", OpPhi, intType, 0, nil, "q_cap_40", "cap1", "new_cap"),
+			Valu("need_memmove", OpNeq64, boolType, 0, nil, "t_ptr", "q_ptr_new"),
+			If("need_memmove", "b62", "b20")),
+
+		// No memmove needed
+		Bloc("b20",
+			Goto("b63")),
+
+		// Do memmove
+		Bloc("b62",
+			Valu("memmove_call", OpStaticCall, memType, 0, nil, "mem56"),
+			Goto("b63")),
+
+		// Merge memmove
+		Bloc("b63",
+			Valu("mem63", OpPhi, memType, 0, nil, "mem56", "memmove_call"),
+			Goto("b42")),
+
+		// i-loop increment (decrement)
+		Bloc("b42",
+			Valu("q_cap_42", OpPhi, intType, 0, nil, "q_cap_40", "q_cap_new"),
+			Valu("q_len_42", OpPhi, intType, 0, nil, "q_len_40", "q_len_new"),
+			Valu("p5_new", OpPhi, intType, 0, nil, "p5", "p5_inc"),
+			Valu("q_ptr_42", OpPhi, ptrType, 0, nil, "q_ptr_40", "q_ptr_new"),
+			Valu("mem42", OpPhi, memType, 0, nil, "mem44", "mem63"),
+			Valu("i_loop_dec", OpSub64, intType, 0, nil, "i_loop", "one"),
+			Goto("b40")),
+
+		// Exit i-loop, enter p5 loop
+		Bloc("b43",
+			Goto("b65")),
+
+		// p5 loop header (divide by 5)
+		Bloc("b65",
+			Valu("z_cap", OpPhi, intType, 0, nil, "q_cap_40", "z_cap_new"),
+			Valu("z_ptr", OpPhi, ptrType, 0, nil, "q_ptr_40", "z_ptr_new"),
+			Valu("mem65", OpPhi, memType, 0, nil, "mem40", "mem66"),
+			Valu("z_len", OpPhi, intType, 0, nil, "q_len_40", "z_len_new"),
+			Valu("p5_65", OpPhi, intType, 0, nil, "p5", "p5_65_inc"),
+			Valu("div5_call", OpStaticCall, memType, 0, nil, "mem65"),
+			Valu("t5_ptr", OpSelectN, ptrType, 0, nil, "div5_call"),
+			Valu("t5_len", OpSelectN, intType, 1, nil, "div5_call"),
+			Valu("r5_len", OpSelectN, intType, 2, nil, "div5_call"),
+			Valu("mem65b", OpSelectN, memType, 3, nil, "div5_call"),
+			Valu("r5_nonzero", OpNeq64, boolType, 0, nil, "r5_len", "zero_int"),
+			If("r5_nonzero", "b67", "b68")),
+
+		// r5 != 0: exit p5 loop, return
+		Bloc("b67",
+			Valu("cmp_result", OpStaticCall, intType, 0, nil, "mem65b"),
+			Valu("mem67", OpStaticCall, memType, 0, nil, "mem65b"),
+			// Use conditional select or just compute min with comparison
+			Valu("p2_lt_p5", OpLess64U, boolType, 0, nil, "p2", "p5_65"),
+			Valu("min_p", OpCondSelect, intType, 0, nil, "p2_lt_p5", "p2", "p5_65"),
+			Valu("is_exact", OpEq64, boolType, 0, nil, "cmp_result", "zero_int"),
+			Exit("mem67")),
+
+		// r5 == 0: continue dividing
+		Bloc("b68",
+			Valu("need_copy2", OpLess64, boolType, 0, nil, "z_cap", "t5_len"),
+			If("need_copy2", "b70", "b74")),
+
+		// No copy needed
+		Bloc("b74",
+			Goto("b76")),
+
+		// Need allocation
+		Bloc("b70",
+			Valu("t5_len_one", OpEq64, boolType, 0, nil, "t5_len", "one"),
+			If("t5_len_one", "b78", "b77")),
+
+		// Allocate size 1
+		Bloc("b78",
+			Valu("alloc1_p5", OpStaticCall, ptrType, 0, nil, "mem65b"),
+			Valu("mem78", OpStaticCall, memType, 0, nil, "mem65b"),
+			Valu("cap1_p5", OpConst64, intType, 1, nil),
+			Goto("b76")),
+
+		// Allocate larger
+		Bloc("b77",
+			Valu("new_cap_p5", OpAdd64, intType, 0, nil, "t5_len", "one"),
+			Valu("alloc_large_p5", OpStaticCall, ptrType, 0, nil, "mem65b"),
+			Valu("mem77", OpStaticCall, memType, 0, nil, "mem65b"),
+			Goto("b76")),
+
+		// Merge allocation
+		Bloc("b76",
+			Valu("z_len_phi", OpPhi, intType, 0, nil, "t5_len", "one", "t5_len"),
+			Valu("z_ptr_phi", OpPhi, ptrType, 0, nil, "z_ptr", "alloc1_p5", "alloc_large_p5"),
+			Valu("mem76", OpPhi, memType, 0, nil, "mem65b", "mem78", "mem77"),
+			Valu("z_cap_phi", OpPhi, intType, 0, nil, "z_cap", "cap1_p5", "new_cap_p5"),
+			Valu("need_memmove2", OpNeq64, boolType, 0, nil, "t5_ptr", "z_ptr_phi"),
+			If("need_memmove2", "b82", "b87")),
+
+		// No memmove needed
+		Bloc("b87",
+			Goto("b66")),
+
+		// Do memmove
+		Bloc("b82",
+			Valu("memmove2_call", OpStaticCall, memType, 0, nil, "mem76"),
+			Goto("b66")),
+
+		// p5 loop increment
+		Bloc("b66",
+			Valu("mem66", OpPhi, memType, 0, nil, "mem76", "memmove2_call"),
+			Valu("p5_65_inc", OpAdd64, intType, 0, nil, "p5_65", "one"),
+			Valu("z_len_new", OpPhi, intType, 0, nil, "z_len_phi", "z_len_phi"),
+			Valu("z_ptr_new", OpPhi, ptrType, 0, nil, "z_ptr_phi", "z_ptr_phi"),
+			Valu("z_cap_new", OpPhi, intType, 0, nil, "z_cap_phi", "z_cap_phi"),
+			Goto("b65")),
+	)
+
+	return fun.f
+}
+
+func TestFloatPrecCFGStructure(t *testing.T) {
+	c := testConfig(t)
+	f := buildFloatPrecCFG(c)
+
+	blockIndex := make(map[*Block]int)
+	for i, b := range f.Blocks {
+		blockIndex[b] = i
+	}
+
+	var (
+		exitBlocks int
+		ifBlocks   int
+		gotoBlocks int
+		phiCount   int
+		backEdges  int
+	)
+
+	for _, b := range f.Blocks {
+		switch len(b.Succs) {
+		case 0:
+			exitBlocks++
+		case 1:
+			gotoBlocks++
+		case 2:
+			ifBlocks++
+		}
+
+		for _, v := range b.Values {
+			if v.Op == OpPhi {
+				phiCount++
+			}
+		}
+
+		for _, e := range b.Succs {
+			if blockIndex[e.Block()] < blockIndex[b] {
+				backEdges++
+			}
+		}
+	}
+
+	t.Logf("CFG structure:")
+	t.Logf("  Total blocks: %d", len(f.Blocks))
+	t.Logf("  Exit blocks: %d", exitBlocks)
+	t.Logf("  If blocks (2 succs): %d", ifBlocks)
+	t.Logf("  Goto blocks (1 succ): %d", gotoBlocks)
+	t.Logf("  Phi nodes: %d", phiCount)
+	t.Logf("  Back-edges: %d", backEdges)
+
+	// Expected: 4 back-edges
+	// - b19 -> b17 (bit-counting loop)
+	// - b88 -> b29 (tab-building loop)
+	// - b42 -> b40 (i-loop)
+	// - b66 -> b65 (p5-loop)
+	expectedBackEdges := 4
+	if backEdges != expectedBackEdges {
+		t.Errorf("expected %d back-edges, got %d", expectedBackEdges, backEdges)
+	}
+
+	// Expected: 2 exit blocks (b22 panic, b67 return)
+	expectedExits := 2
+	if exitBlocks != expectedExits {
+		t.Errorf("expected %d exit blocks, got %d", expectedExits, exitBlocks)
 	}
 }
 
@@ -1504,9 +1876,15 @@ func BenchmarkComputeLive_Irreducible_Chain10(b *testing.B) {
 // REAL LIFE BENCHMARKS
 // =============================================================================
 
-func BenchmarkComputeLive_GoldenSHA1(b *testing.B) {
+func BenchmarkComputeLive_HeapSort(b *testing.B) {
 	c := testConfig(b)
-	f := buildGoldenSHA1TestCFG(c)
+	f := buildHeapSortCFG(c)
+	benchmarkComputeLive(b, f)
+}
+
+func BenchmarkComputeLive_FloatPrec(b *testing.B) {
+	c := testConfig(b)
+	f := buildFloatPrecCFG(c)
 	benchmarkComputeLive(b, f)
 }
 
