@@ -82,23 +82,82 @@ func intersect(b, c *Block, postnum []int, idom []*Block) *Block {
 	return b
 }
 
-// finds postorder and reverse postorder within SCC.
+// finds postorder and modified reverse postorder within SCC.
 func sccAlternatingOrders(scc []*Block) (exitward, entryward []*Block) {
-	if len(scc) == 2 {
-		// Trivial case: just swap order
+	switch len(scc) {
+	case 1: // 93%
+		return scc, scc
+	case 2: // 1%
 		return scc, []*Block{scc[1], scc[0]}
+	case 3: // 2%
+		// Direct edge inspection for 3 blocks
+		return order3BlockSCC(scc)
+	default: // 4%
+		// Full DFS only for larger SCCs
+		return sccOrdersDFS(scc)
 	}
+}
+
+// order3BlockSCC computes orderings for a 3-block SCC without full DFS.
+func order3BlockSCC(scc []*Block) (exitward, entryward []*Block) {
+	a, b, c := scc[0], scc[1], scc[2]
+	f := a.Func
+
+	inSCC := f.Cache.allocBoolSlice(f.NumBlocks())
+	defer f.Cache.freeBoolSlice(inSCC)
+	inSCC[a.ID] = true
+	inSCC[b.ID] = true
+	inSCC[c.ID] = true
+
+	// Find which block a reaches first within SCC
+	var aSucc *Block
+	for _, s := range a.Succs {
+		sb := s.Block()
+		if inSCC[sb.ID] && sb != a {
+			aSucc = sb
+			break
+		}
+	}
+
+	// Determine the third block
+	other := b
+	if aSucc == b {
+		other = c
+	}
+
+	// Check if aSucc directly reaches other within SCC
+	aSuccReachesOther := false
+	for _, s := range aSucc.Succs {
+		if s.Block() == other {
+			aSuccReachesOther = true
+			break
+		}
+	}
+
+	// Postorder: furthest from entry comes first
+	if aSuccReachesOther {
+		entryward = []*Block{other, aSucc, a}
+	} else {
+		entryward = []*Block{aSucc, other, a}
+	}
+
+	exitward = []*Block{entryward[2], entryward[1], entryward[0]}
+	return
+}
+
+// sccOrdersDFS computes orderings using full DFS for larger SCCs.
+func sccOrdersDFS(scc []*Block) (exitward, entryward []*Block) {
 	entry := scc[0]
 	f := entry.Func
 
-	// limit the graph to only blocks within the SCC
+	// Limit the graph to only blocks within the SCC
 	valid := f.Cache.allocBoolSlice(f.NumBlocks())
 	defer f.Cache.freeBoolSlice(valid)
 	for _, b := range scc {
 		valid[b.ID] = true
 	}
-	entryward = poWithNumberingForValidBlocks(entry, valid, nil)
-	exitward = poWithNumberingForValidBlocks(exitward[0], valid, nil)
 
-	return entryward, exitward
+	entryward = poWithNumberingForValidBlocks(entry, valid, nil)
+	exitward = poWithNumberingForValidBlocks(entryward[0], valid, nil)
+	return
 }
