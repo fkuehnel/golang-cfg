@@ -4,7 +4,7 @@ set -euo pipefail
 dest="$HOME/Desktop/SCC-Stats"
 mkdir -p "$dest"
 
-find . -type f -name 'scc_stats.csv' -print0 |
+find . -type f -name 'stats_scc.csv' -print0 |
 while IFS= read -r -d '' f; do
   rel="${f#./}"
   dir="$(dirname "$rel")"
@@ -17,4 +17,3 @@ while IFS= read -r -d '' f; do
 
   mv -n -- "$f" "$dest/$new"
 done
-

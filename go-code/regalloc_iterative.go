@@ -17,7 +17,8 @@ type liveInfo struct {
 // Based on empirical analysis of 290,000 functions from the Go toolchain.
 func (s *regAllocState) computeLive() {
 	f := s.f
-	// single block functions do not have variables that are live across branches
+	// single block functions do not have variables that are live across
+	// branches
 	if len(f.Blocks) == 1 {
 		return
 	}
@@ -41,38 +42,16 @@ func (s *regAllocState) computeLive() {
 		return
 	}
 
-	// FALLBACK: Irreducible CFGs or small loopy functions
-	// Traditional iterative algorithm without SCC computation.
-	// Good for small functions where SCC overhead isn't worth it.
-	// The cutoff limit is still to be explored.
-	if s.loopnest.hasIrreducible || (len(po) < 30) {
-		s.computeLiveIterative(po, live, t)
-		return
-	}
+	// FAST PATH: Single loop (23.5% of functions)
+	// Simple iterative is faster than SCC overhead for single loops
+	//if len(s.loopnest.loops) == 1 {
+	//	s.computeLiveIterative(po, live, t)
+	//	return
+	//}
 
-	// LOOP PATH: Reducible CFGs with loops (32% of functions)
+	// LOOP PATH: General CFGs with loops (32% of functions)
 	// Use SCC decomposition with 3-pass convergence (empirical guarantee, no proof).
-	s.computeLiveWithLoops(po, live, t)
-}
-
-// computeLiveAcyclic handles the common case of acyclic CFGs.
-// A single postorder pass is sufficient - no iteration, no SCC computation.
-// This covers 68% of real-world functions.
-func (s *regAllocState) computeLiveAcyclic(po []*Block, live, t *sparseMapPos) {
-	f := s.f
-	rematIDs := make([]ID, 0, 64)
-
-	// Single pass in postorder (exits first, entry last).
-	// For backward analysis on DAGs, this visits each node after all its
-	// successors, which is optimal - no iteration needed.
-	for _, b := range po {
-		s.processBlock(b, live, t, rematIDs, nil)
-	}
-
-	if f.pass.debug > regDebug {
-		s.debugPrintLive("after single pass (acyclic)", f, s.live, s.desired)
-	}
-	s.computeDesired()
+	s.computeLiveWithSccs(po, live, t)
 }
 
 // computeLiveIterative handles irreducible CFGs or small loopy functions
@@ -82,7 +61,20 @@ func (s *regAllocState) computeLiveIterative(po []*Block, live, t *sparseMapPos)
 	f := s.f
 	rematIDs := make([]ID, 0, 64)
 
-	// Set up loop liveness tracking for post-processing
+	// Liveness analysis.
+	// This is an adapted version of the algorithm described in chapter 2.4.2
+	// of Fabrice Rastello's On Sparse Intermediate Representations.
+	//   https://web.archive.org/web/20240417212122if_/https://inria.hal.science/hal-00761555/file/habilitation.pdf#section.50
+	//
+	// For our implementation, we fall back to a traditional iterative algorithm when we encounter
+	// Irreducible CFGs. They are very uncommon in Go code because they need to be constructed with
+	// gotos and our current loopnest definition does not compute all the information that
+	// we'd need to compute the loop ancestors for that step of the algorithm.
+	//
+	// Additionally, instead of only considering non-loop successors in the initial DFS phase,
+	// we compute the liveout as the union of all successors. This larger liveout set is a subset
+	// of the final liveout for the block and adding this information in the DFS phase means that
+	// we get slightly more accurate distance information.
 	var loopLiveIn map[*loop][]liveInfo
 	var numCalls []int32
 	if len(s.loopnest.loops) > 0 && !s.loopnest.hasIrreducible {
@@ -91,23 +83,42 @@ func (s *regAllocState) computeLiveIterative(po []*Block, live, t *sparseMapPos)
 		defer f.Cache.freeInt32Slice(numCalls)
 	}
 
-	// Traditional iterative algorithm: Iterate until no changes occur.
+	// Compute reverse postorder for alternating passes
+	rpo := make([]*Block, len(po))
+	for i, b := range po {
+		rpo[len(po)-1-i] = b
+	}
+
+	order := po
 	for iter := 0; ; iter++ {
 		changed := false
 
-		for _, b := range po {
-			if s.processBlock(b, live, t, rematIDs, loopLiveIn) {
+		if (iter & 1) == 1 {
+			order = po // rpo
+		} else {
+			order = po
+		}
+
+		for _, b := range order {
+			if s.processBlock(b, live, t, rematIDs, loopLiveIn, numCalls) {
 				changed = true
 			}
 		}
 
+		// Doing a traditional iterative algorithm and have run
+		// out of changes
 		if !changed {
 			break
 		}
-	}
 
+		// Doing a pre-pass and will fill in the liveness information
+		// later
+		if loopLiveIn != nil {
+			break
+		}
+	}
 	if f.pass.debug > regDebug {
-		s.debugPrintLive("after iterative (irreducible/small)", f, s.live, s.desired)
+		s.debugPrintLive("after dfs walk", f, s.live, s.desired)
 	}
 
 	// irreducible CFGs and functions without loops are already
@@ -118,58 +129,7 @@ func (s *regAllocState) computeLiveIterative(po []*Block, live, t *sparseMapPos)
 	}
 
 	// Post-process: propagate loop liveness through loop bodies
-	s.propagateLoopLiveness(po, live, t, loopLiveIn, numCalls)
-}
-
-// computeLiveWithLoops handles reducible CFGs with loops using SCC decomposition.
-// Optimized for the common case of a single non-trivial SCC (24% of all functions).
-func (s *regAllocState) computeLiveWithLoops(po []*Block, live, t *sparseMapPos) {
-	f := s.f
-	rematIDs := make([]ID, 0, 64)
-
-	// Set up loop liveness tracking for post-processing
-	loopLiveIn := make(map[*loop][]liveInfo)
-	numCalls := f.Cache.allocInt32Slice(f.NumBlocks())
-	defer f.Cache.freeInt32Slice(numCalls)
-
-	// Compute SCCs - needed for loop cases
-	sccs := sccPartition(f)
-
-	// Process SCCs in reverse topological order
-	for j := len(sccs) - 1; j >= 0; j-- {
-		scc := sccs[j]
-
-		if len(scc) == 1 {
-			// SINGLETON SCC: Single pass suffices (no internal cycles)
-			b := scc[0]
-			s.processBlock(b, live, t, rematIDs, loopLiveIn)
-			continue
-		}
-
-		// NON-TRIVIAL SCC: Apply 3-pass algorithm with alternating order
-		// Empirical finding: ALL SCCs in our 290k-function dataset converge
-		// in exactly 3 passes with alternating traversal order.
-		exitward, entryward := sccAlternatingOrders(scc)
-
-		// Pass 1: postorder (exits → entry direction)
-		for _, b := range exitward {
-			s.processBlock(b, live, t, rematIDs, loopLiveIn)
-		}
-		// Pass 2: reverse direction (entry → exits  within SCC)
-		for _, b := range entryward {
-			s.processBlock(b, live, t, rematIDs, loopLiveIn)
-		}
-		// Pass 3: postorder again
-		for _, b := range exitward {
-			s.processBlock(b, live, t, rematIDs, loopLiveIn)
-		}
-	}
-
-	if f.pass.debug > regDebug {
-		s.debugPrintLive("after SCC 3-pass", f, s.live, s.desired)
-	}
-
-	// Post-process: propagate loop liveness through loop bodies
+	// Worst case scenarios O(B² × V), B blocks, V values
 	s.propagateLoopLiveness(po, live, t, loopLiveIn, numCalls)
 }
 
@@ -180,6 +140,7 @@ func (s *regAllocState) processBlock(
 	live, t *sparseMapPos,
 	rematIDs []ID,
 	loopLiveIn map[*loop][]liveInfo,
+	numCalls []int32,
 ) bool {
 	// Start with known live values at the end of the block
 	live.clear()
@@ -219,8 +180,6 @@ func (s *regAllocState) processBlock(
 		}
 	}
 
-	// Walk instructions backward, updating liveness
-	rematIDs = rematIDs[:0]
 	for i := len(b.Values) - 1; i >= 0; i-- {
 		v := b.Values[i]
 		live.remove(v.ID)
@@ -228,6 +187,10 @@ func (s *regAllocState) processBlock(
 			continue
 		}
 		if opcodeTable[v.Op].call {
+			if numCalls != nil {
+				numCalls[b.ID]++
+			}
+			rematIDs = rematIDs[:0]
 			c := live.contents()
 			for i := range c {
 				c[i].val += unlikelyDistance
@@ -236,11 +199,12 @@ func (s *regAllocState) processBlock(
 					rematIDs = append(rematIDs, vid)
 				}
 			}
-			// Remove rematerializeable values - we don't spill them
+			// We don't spill rematerializeable values, and assuming they
+			// are live across a call would only force shuffle to add some
+			// (dead) constant rematerialization. Remove them.
 			for _, r := range rematIDs {
 				live.remove(r)
 			}
-			rematIDs = rematIDs[:0]
 		}
 		for _, a := range v.Args {
 			if s.values[a.ID].needReg {
@@ -280,10 +244,11 @@ func (s *regAllocState) processBlock(
 			}
 		}
 
-		if update {
-			s.live[p.ID] = updateLive(t, s.live[p.ID])
-			changed = true
+		if !update {
+			continue
 		}
+		s.live[p.ID] = updateLive(t, s.live[p.ID])
+		changed = true
 	}
 	return changed
 }
@@ -414,113 +379,36 @@ func (s *regAllocState) propagateLoopLiveness(
 	s.computeDesired()
 
 	if f.pass.debug > regDebug {
-		s.debugPrintLive("final", f, s.live, s.desired)
+		s.debugPrintLive("final (iterative)", f, s.live, s.desired)
 	}
+}
+
+// processDesiredWithOrder computes desired registers for blocks in the given order.
+// Returns true if any predecessor's desired state changed.
+func (s *regAllocState) processDesiredWithOrder(order []*Block, desired *desiredState) bool {
+	changed := false
+	for _, b := range order {
+		if s.processBlockDesired(b, desired) {
+			changed = true
+		}
+	}
+	return changed
 }
 
 // computeDesired computes the desired register information at the end of each block.
 func (s *regAllocState) computeDesired() {
+
+	// TODO: Can we speed this up using the liveness information we have already
+	// from computeLive?
+	// TODO: Since we don't propagate information through phi nodes, can we do
+	// this as a single dominator tree walk instead of the iterative solution?
 	var desired desiredState
-	f := s.f
-	po := f.postorder()
+	po := s.f.postorder()
+	changed := false
 	for {
-		changed := false
-		for _, b := range po {
-			desired.copy(&s.desired[b.ID])
-			for i := len(b.Values) - 1; i >= 0; i-- {
-				v := b.Values[i]
-				prefs := desired.remove(v.ID)
-				if v.Op == OpPhi {
-					continue
-				}
-				regspec := s.regspec(v)
-				desired.clobber(regspec.clobbers)
-				for _, j := range regspec.inputs {
-					if countRegs(j.regs) != 1 {
-						continue
-					}
-					desired.clobber(j.regs)
-					desired.add(v.Args[j.idx].ID, pickReg(j.regs))
-				}
-				if opcodeTable[v.Op].resultInArg0 || v.Op == OpAMD64ADDQconst || v.Op == OpAMD64ADDLconst || v.Op == OpSelect0 {
-					if opcodeTable[v.Op].commutative {
-						desired.addList(v.Args[1].ID, prefs)
-					}
-					desired.addList(v.Args[0].ID, prefs)
-				}
-			}
-			for _, e := range b.Preds {
-				p := e.b
-				changed = s.desired[p.ID].merge(&desired) || changed
-			}
-		}
-		if !changed {
+		changed = s.processDesiredWithOrder(po, &desired)
+		if !changed || (!s.loopnest.hasIrreducible && len(s.loopnest.loops) == 0) {
 			break
 		}
 	}
-}
-
-func updateLive(t *sparseMapPos, live []liveInfo) []liveInfo {
-	live = live[:0]
-	if cap(live) < t.size() {
-		live = make([]liveInfo, 0, t.size())
-	}
-	for _, e := range t.contents() {
-		live = append(live, liveInfo{e.key, e.val, e.pos})
-	}
-	return live
-}
-
-func branchDistance(b *Block, s *Block) int32 {
-	if len(b.Succs) == 2 {
-		if b.Succs[0].b == s && b.Likely == BranchLikely ||
-			b.Succs[1].b == s && b.Likely == BranchUnlikely {
-			return likelyDistance
-		}
-		if b.Succs[0].b == s && b.Likely == BranchUnlikely ||
-			b.Succs[1].b == s && b.Likely == BranchLikely {
-			return unlikelyDistance
-		}
-	}
-	return normalDistance
-}
-
-func (s *regAllocState) debugPrintLive(stage string, f *Func, live [][]liveInfo, desired []desiredState) {
-	fmt.Printf("%s: live values at end of each block: %s\n", stage, f.Name)
-	for _, b := range f.Blocks {
-		s.debugPrintLiveBlock(b, live[b.ID], &desired[b.ID])
-	}
-}
-
-func (s *regAllocState) debugPrintLiveBlock(b *Block, live []liveInfo, desired *desiredState) {
-	fmt.Printf("  %s:", b)
-	sorted := slices.Clone(live)
-	slices.SortFunc(sorted, func(a, b liveInfo) int {
-		return cmp.Compare(a.ID, b.ID)
-	})
-	for _, x := range sorted {
-		fmt.Printf(" v%d(%d)", x.ID, x.dist)
-		for _, e := range desired.entries {
-			if e.ID != x.ID {
-				continue
-			}
-			fmt.Printf("[")
-			first := true
-			for _, r := range e.regs {
-				if r == noRegister {
-					continue
-				}
-				if !first {
-					fmt.Printf(",")
-				}
-				fmt.Print(&s.registers[r])
-				first = false
-			}
-			fmt.Printf("]")
-		}
-	}
-	if avoid := desired.avoid; avoid != 0 {
-		fmt.Printf(" avoid=%v", s.RegMaskString(avoid))
-	}
-	fmt.Println()
 }

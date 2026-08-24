@@ -12,11 +12,46 @@ package ssa
 //   - No auxiliary data on graph nodes required
 // Implementation details:
 //   - Unreachable blocks are excluded from the result.
+//   - Generational memory management is used to avoid bad O(N*D)
+//     with N number of blocks and D nested loop depth.
 //
 // Example:
 //
 //  Given:  b1 → b2, b2 → [b3, b4], b3 → b2, b4 → b5
 //  Result: [[b1], [b2, b3], [b4], [b5]]
+
+// Lesson here is that memory management in recursive SCC
+// decompositions is critical to optimal O(n) performance.
+
+// sccWork provides reusable workspace for SCC algorithms.
+// Uses generational markers: slot is "set" iff mark[id] == gen.
+// Clearing is O(1): just increment the generation.
+type sccWork struct {
+	// Generation counters
+	scopeGen uint32
+	seenGen  uint32
+
+	// Per-block markers (indexed by block ID)
+	scopeMark []uint32 // in scope if scopeMark[id] == scopeGen
+	seenMark  []uint32 // visited if seenMark[id] == seenGen
+
+	// SCC membership (overwritten each pass, no generation needed)
+	blockSCC []int
+
+	// Reusable stack
+	stack []*Block
+}
+
+func newSCCWork(n int) *sccWork {
+	return &sccWork{
+		scopeGen:  1, // Start at 1 so zero-initialized marks are "unset"
+		seenGen:   1,
+		scopeMark: make([]uint32, n),
+		seenMark:  make([]uint32, n),
+		blockSCC:  make([]int, n),
+		stack:     make([]*Block, 0, 64),
+	}
+}
 
 // EntryEdge represents a CFG edge entering an SCC from outside.
 type EntryEdge struct {
@@ -130,70 +165,64 @@ func (s *SCC) EntryTargets() []*Block {
 }
 
 // computeSCCs computes all SCCs with entry edge information.
-// Results are in topological order of the condensation DAG.
-// Unreachable blocks are excluded from the result.
+// - Results are in topological order of the condensation DAG.
+// - Unreachable blocks are excluded from the result.
 func (f *Func) computeSCCs() []SCC {
 	po := f.postorder()
+	w := newSCCWork(f.NumBlocks())
 
-	// exclude dead (non-reachable) blocks
-	scope := f.Cache.allocBoolSlice(f.NumBlocks())
-	defer f.Cache.freeBoolSlice(scope)
+	// Scope = all reachable blocks
 	for _, b := range po {
-		scope[b.ID] = true
+		w.scopeMark[b.ID] = w.scopeGen
 	}
 
-	return kosarajuSCCs(f, po, scope)
+	return w.kosaraju(po)
 }
 
 // sccSubgraph computes SCCs within a subgraph, excluding specified block.
-// Used for recursive Bourdoncle decomposition.
-func sccSubgraph(f *Func, blocks []*Block, exclude *Block) []SCC {
+// Uses the workspace to avoid O(N) allocations.
+func (w *sccWork) sccSubgraph(f *Func, blocks []*Block, exclude *Block) []SCC {
 	if len(blocks) == 0 {
 		return nil
 	}
 
-	// Build scope: valid blocks in subgraph
-	scope := f.Cache.allocBoolSlice(f.NumBlocks())
-	defer f.Cache.freeBoolSlice(scope)
+	// New scope generation = O(1) clear
+	w.scopeGen++
 	for _, b := range blocks {
-		scope[b.ID] = (b != exclude)
+		if b != exclude {
+			w.scopeMark[b.ID] = w.scopeGen
+		}
 	}
 
-	// Compute local postorder (handles disconnected subgraphs)
-	po := subgraphPostorder(f, blocks, exclude, scope)
+	// Compute postorder within scope
+	po := w.postorder(blocks, exclude)
 	if len(po) == 0 {
 		return nil
 	}
 
-	return kosarajuSCCs(f, po, scope)
+	return w.kosaraju(po)
 }
 
-// subgraphPostorder computes postorder for blocks within scope.
-func subgraphPostorder(f *Func, blocks []*Block, exclude *Block, scope []bool) []*Block {
-	visited := f.Cache.allocBoolSlice(f.NumBlocks())
-	defer f.Cache.freeBoolSlice(visited)
-
-	// Ensure visited is false for all blocks in scope; cache may return unzeroed memory.
-	for _, b := range blocks {
-		if b != exclude && scope[b.ID] {
-			visited[b.ID] = false
-		}
-	}
+// postorder computes DFS postorder for blocks in current scope.
+func (w *sccWork) postorder(blocks []*Block, exclude *Block) []*Block {
+	// New seen generation = O(1) clear
+	w.seenGen++
+	scopeGen := w.scopeGen
+	seenGen := w.seenGen
 
 	var po []*Block
 	var dfs func(*Block)
 	dfs = func(b *Block) {
-		if !scope[b.ID] || visited[b.ID] {
+		if w.scopeMark[b.ID] != scopeGen || w.seenMark[b.ID] == seenGen {
 			return
 		}
-		visited[b.ID] = true
+		w.seenMark[b.ID] = seenGen
 		for _, e := range b.Succs {
 			dfs(e.b)
 		}
 		po = append(po, b)
 	}
 
-	// Start from each block to handle disconnected components
 	for _, b := range blocks {
 		if b != exclude {
 			dfs(b)
@@ -202,133 +231,43 @@ func subgraphPostorder(f *Func, blocks []*Block, exclude *Block, scope []bool) [
 	return po
 }
 
-// kosarajuSCCs performs Kosaraju's second pass: reverse postorder traversal
-// with BFS on reverse edges to collect SCCs.
-//
-// If scope is nil, all predecessors are considered valid (fast path for top-level).
-// If scope is non-nil, only predecessors where scope[id]==true are followed.
-func kosarajuSCCs(f *Func, po []*Block, scope []bool) []SCC {
-	n := f.NumBlocks()
-
-	seen := f.Cache.allocBoolSlice(n)
-	defer f.Cache.freeBoolSlice(seen)
-	queue := f.Cache.allocBlockSlice(len(po))
-	defer f.Cache.freeBlockSlice(queue)
-
-	// SCC membership for entry edge computation. When scope != nil, we only
-	// consult blockSCC for predecessors in scope; by topological ordering, those
-	// predecessors have already been assigned.
-	var blockSCC []int
-	if scope == nil {
-		blockSCC = make([]int, n)
-	} else {
-		blockSCC = f.Cache.allocIntSlice(n)
-		defer f.Cache.freeIntSlice(blockSCC)
-	}
+// kosaraju performs second pass: reverse postorder with DFS on predecessors.
+// Results are in topological order.
+func (w *sccWork) kosaraju(po []*Block) []SCC {
+	// New seen generation = O(1) clear
+	w.seenGen++
+	scopeGen := w.scopeGen
+	seenGen := w.seenGen
+	blockSCC := w.blockSCC
+	stack := w.stack[:0]
 
 	result := make([]SCC, 0, len(po))
 	sccIdx := 0
-	queue = queue[:0]
 
-	// Process in reverse postorder
 	for i := len(po) - 1; i >= 0; i-- {
 		leader := po[i]
-		if seen[leader.ID] {
+		if w.seenMark[leader.ID] == seenGen {
 			continue
 		}
 
 		sccIdx++
 		scc := make([]*Block, 0, 4)
-		queue = append(queue[:0], leader)
-		seen[leader.ID] = true
-
-		// BFS on reverse edges
-		for len(queue) > 0 {
-			b := queue[0]
-			queue = queue[1:]
-			scc = append(scc, b)
-			blockSCC[b.ID] = sccIdx
-
-			for _, e := range b.Preds {
-				pred := e.b
-				if (scope == nil || scope[pred.ID]) && !seen[pred.ID] {
-					seen[pred.ID] = true
-					queue = append(queue, pred)
-				}
-			}
-		}
-
-		// Collect entry edges for non-trivial SCCs
-		var entries []EntryEdge
-		if len(scc) > 1 {
-			for _, b := range scc {
-				for _, e := range b.Preds {
-					if (scope == nil || scope[e.b.ID]) && blockSCC[e.b.ID] != sccIdx {
-						entries = append(entries, EntryEdge{From: e.b, To: b})
-					}
-				}
-			}
-		}
-
-		result = append(result, SCC{Blocks: scc, Entries: entries})
-	}
-
-	return result
-}
-
-// kosarajuSCCs performs Kosaraju's second pass: reverse postorder traversal
-// with DFS on reverse edges to collect SCCs. Each SCC is order
-// by preorder on reverse graph (Preds).
-//
-// If scope is nil, all predecessors are considered valid (fast path for top-level).
-// If scope is non-nil, only predecessors where scope[id]==true are followed.
-func kosarajuSCCs(f *Func, po []*Block, scope []bool) []SCC {
-	n := f.NumBlocks()
-
-	seen := f.Cache.allocBoolSlice(n)
-	defer f.Cache.freeBoolSlice(seen)
-	stack := f.Cache.allocBlockSlice(len(po))
-	defer f.Cache.freeBlockSlice(stack)
-
-	// SCC membership for entry edge computation
-	var blockSCC []int
-	if scope == nil {
-		blockSCC = make([]int, n)
-	} else {
-		blockSCC = f.Cache.allocIntSlice(n)
-		defer f.Cache.freeIntSlice(blockSCC)
-	}
-
-	result := make([]SCC, 0, len(po))
-	sccIdx := 0
-
-	// Process in reverse postorder
-	for i := len(po) - 1; i >= 0; i-- {
-		leader := po[i]
-		if seen[leader.ID] {
-			continue
-		}
-
-		sccIdx++
-		scc := make([]*Block, 0, 4)
-		stack = stack[:1]
-		stack[0] = leader
-		seen[leader.ID] = true
 
 		// DFS on reverse edges
+		stack = append(stack[:0], leader)
+		w.seenMark[leader.ID] = seenGen
+
 		for len(stack) > 0 {
-			// Pop from end - O(1)
-			top := len(stack) - 1
-			b := stack[top]
-			stack = stack[:top]
+			b := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
 
 			scc = append(scc, b)
 			blockSCC[b.ID] = sccIdx
 
 			for _, e := range b.Preds {
 				pred := e.b
-				if (scope == nil || scope[pred.ID]) && !seen[pred.ID] {
-					seen[pred.ID] = true
+				if w.scopeMark[pred.ID] == scopeGen && w.seenMark[pred.ID] != seenGen {
+					w.seenMark[pred.ID] = seenGen
 					stack = append(stack, pred)
 				}
 			}
@@ -339,7 +278,7 @@ func kosarajuSCCs(f *Func, po []*Block, scope []bool) []SCC {
 		if len(scc) > 1 {
 			for _, b := range scc {
 				for _, e := range b.Preds {
-					if (scope == nil || scope[e.b.ID]) && blockSCC[e.b.ID] != sccIdx {
+					if w.scopeMark[e.b.ID] == scopeGen && blockSCC[e.b.ID] != sccIdx {
 						entries = append(entries, EntryEdge{From: e.b, To: b})
 					}
 				}
@@ -349,19 +288,18 @@ func kosarajuSCCs(f *Func, po []*Block, scope []bool) []SCC {
 		result = append(result, SCC{Blocks: scc, Entries: entries})
 	}
 
+	w.stack = stack // Preserve capacity
 	return result
 }
 
-// hasSelfLoop returns true if any block in the SCC has a self-loop edge.
-func hasSelfLoop(blocks []*Block) bool {
-	for _, b := range blocks {
-		for _, e := range b.Succs {
-			if e.b == b {
-				return true
-			}
-		}
+// This is a convenience wrapper that creates a temporary workspace.
+// For repeated calls (like in Bourdoncle decomposition), use sccWork directly.
+func sccSubgraph(f *Func, blocks []*Block, exclude *Block) []SCC {
+	if len(blocks) == 0 {
+		return nil
 	}
-	return false
+	w := newSCCWork(f.NumBlocks())
+	return w.sccSubgraph(f, blocks, exclude)
 }
 
 // sccPartition returns SCCs as [][]*Block for backward compatibility.
@@ -374,68 +312,8 @@ func sccPartition(f *Func) [][]*Block {
 	return result
 }
 
-// sccAlternatingOrdersBFS computes two traversal orders for SCC iteration.
-// entryward: scc blocks in reverse order
-// exitward: reversed BFS from scc[n-1] (last block)
-func sccAlternatingOrdersBFS(scc []*Block) (entryward, exitward []*Block) {
-	n := len(scc)
-	switch n {
-	case 0:
-		return
-	case 1:
-		entryward, exitward = scc, scc
-		return
-	case 2:
-		entryward = []*Block{scc[1], scc[0]}
-		exitward = scc
-		return
-	}
-
-	// Build membership set for O(1) lookup
-	inSCC := make(map[ID]bool, n)
-	for _, b := range scc {
-		inSCC[b.ID] = true
-	}
-
-	// BFS from a starting block, only following edges within SCC
-	bfsFrom := func(start *Block) []*Block {
-		seen := make(map[ID]bool, len(scc))
-		order := make([]*Block, 0, len(scc))
-		queue := []*Block{start}
-		seen[start.ID] = true
-
-		for len(queue) > 0 {
-			b := queue[0]
-			queue = queue[1:]
-			order = append(order, b)
-
-			for _, e := range b.Succs {
-				succ := e.b
-				if inSCC[succ.ID] && !seen[succ.ID] {
-					seen[succ.ID] = true
-					queue = append(queue, succ)
-				}
-			}
-		}
-		return order
-	}
-
-	// entryward: scc blocks reversed
-	entryward = make([]*Block, n)
-	for i, b := range scc {
-		entryward[n-1-i] = b
-	}
-	// exitward: BFS from scc[n-1], then reversed
-	bfs1 := bfsFrom(scc[n-1])
-	exitward = make([]*Block, n)
-	for i, b := range bfs1 {
-		exitward[n-1-i] = b
-	}
-	return
-}
-
 // sccAlternatingOrdersDFS computes two traversal orders for SCC iteration.
-// entryward: reversed DFS postorder from scc[0] (entry)
+// entryward: DFS postorder from scc[0] (entry)
 // exitward: DFS postorder from entryward[0]
 func sccAlternatingOrdersDFS(scc []*Block) (entryward, exitward []*Block) {
 	n := len(scc)
@@ -487,12 +365,8 @@ func sccAlternatingOrdersDFS(scc []*Block) (entryward, exitward []*Block) {
 		return order
 	}
 
-	// entryward: DFS postorder from scc[0], then reversed
-	dfs1 := dfsFrom(scc[0])
-	entryward = make([]*Block, n)
-	for i, b := range dfs1 {
-		entryward[n-1-i] = b
-	}
+	// entryward: DFS postorder from scc[0]
+	entryward = dfsFrom(scc[0])
 	// exitward: DFS postorder from entryward[0]
 	exitward = dfsFrom(entryward[0])
 	return

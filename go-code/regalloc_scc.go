@@ -167,8 +167,8 @@ func (s *regAllocState) computeLiveWithSccs(po []*Block, live, t *sparseMapPos) 
 
 	// Process SCCs in reverse topological order
 	maxIter := 0
-	for j := len(sccs) - 1; j >= 0; j-- {
-		scc := &sccs[j]
+	for i := len(sccs) - 1; i >= 0; i-- {
+		scc := &sccs[i]
 		if len(scc.Blocks) == 1 {
 			// SINGLETON SCC (93% of all cases): Single pass suffices (no internal cycles)
 			// Topological order guarantees that we've processed all predecessors.

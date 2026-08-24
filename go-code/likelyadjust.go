@@ -1,3 +1,18 @@
+type loop struct {
+	header *Block // The header node of this (reducible) loop
+	outer  *loop  // loop containing this loop
+
+	// Next three fields used by regalloc and/or
+	// aid in computation of inner-ness and list of blocks.
+	nBlocks int32 // Number of blocks in this loop but not within inner loops
+	depth   int16 // Nesting depth of the loop; 1 is outermost.
+	isInner bool  // True if never discovered to contain a loop
+
+	// True if all paths through the loop have a call.
+	// Computed and used by regalloc; stored here for convenience.
+	containsUnavoidableCall bool
+}
+
 type loopnest struct {
 	f              *Func
 	b2l            []*loop    // block ID -> innermost containing loop
@@ -24,13 +39,19 @@ func loopnestfor(f *Func) *loopnest {
 		fmt.Printf("loop finding (Bourdoncle) in %s\n", f.Name)
 	}
 
+	// Get top-level SCCs (cached via f.sccs())
 	sccs := f.sccs()
-	if f.pass != nil && f.pass.debug > 3 {
+	debug := f.pass != nil && f.pass.debug > 3
+
+	if debug {
 		fmt.Printf("  found %d SCCs\n", len(sccs))
 	}
 
-	// Use cached top-level SCCs
-	for i, scc := range sccs {
+	// Create workspace once, reuse for all recursive decomposition
+	work := newSCCWork(f.NumBlocks())
+
+	for i := range sccs {
+		scc := &sccs[i]
 		if !scc.IsLoop() {
 			continue
 		}
@@ -38,15 +59,12 @@ func loopnestfor(f *Func) *loopnest {
 			sawIrred = true
 			continue
 		}
-		lscc := &sccs[i]
-		if f.pass != nil && f.pass.debug > 3 {
-			fmt.Printf("  processing loop SCC with %d blocks\n", len(lscc.Blocks))
+		if debug {
+			fmt.Printf("  processing loop SCC with %d blocks\n", len(scc.Blocks))
 		}
-		// Recursively process this component
-		processLoop(f, lscc, nil, b2l, &loops, &sawIrred)
+		processLoop(f, work, scc, nil, b2l, &loops, &sawIrred, debug)
 	}
 
-	// Compute nesting depths
 	computeLoopDepths(loops)
 
 	ln := &loopnest{
@@ -69,7 +87,7 @@ func loopnestfor(f *Func) *loopnest {
 }
 
 // processLoop recursively processes an SCC using Bourdoncle's decomposition.
-func processLoop(f *Func, scc *SCC, outer *loop, b2l []*loop, loops *[]*loop, sawIrred *bool) {
+func processLoop(f *Func, w *sccWork, scc *SCC, outer *loop, b2l []*loop, loops *[]*loop, sawIrred *bool, debug bool) {
 	if len(scc.Blocks) == 0 {
 		return
 	}
@@ -79,10 +97,14 @@ func processLoop(f *Func, scc *SCC, outer *loop, b2l []*loop, loops *[]*loop, sa
 	if header == nil {
 		// Irreducible or whatnot -> not processing!
 		*sawIrred = true
-		if f.pass != nil && f.pass.debug > 3 {
-			fmt.Printf("      header=%s (by dominance)\n", header)
+		if debug {
+			fmt.Printf("      no header (irreducible)\n")
 		}
 		return
+	}
+
+	if debug {
+		fmt.Printf("      header=%s\n", header)
 	}
 
 	// Create loop
@@ -109,24 +131,17 @@ func processLoop(f *Func, scc *SCC, outer *loop, b2l []*loop, loops *[]*loop, sa
 	}
 
 	if len(remaining) == 0 {
-		if f.pass != nil && f.pass.debug > 3 {
-			fmt.Printf("      no remaining blocks, done\n")
-		}
 		return
 	}
 
 	// Find nested SCCs with header removed
-	if f.pass != nil && f.pass.debug > 3 {
-		fmt.Printf("      remaining=%d, calling sccSubgraph\n", len(remaining))
+	if debug {
+		fmt.Printf("      remaining=%d, decomposing\n", len(remaining))
 	}
-	subSccs := sccSubgraph(f, remaining, header)
+	subSccs := w.sccSubgraph(f, remaining, header)
 
-	if f.pass != nil && f.pass.debug > 3 {
+	if debug {
 		fmt.Printf("      got %d sub-SCCs\n", len(subSccs))
-		for j, sub := range subSccs {
-			fmt.Printf("        sub[%d]: %d blocks, isLoop=%v\n",
-				j, len(sub.Blocks), sub.IsLoop())
-		}
 	}
 
 	for i := range subSccs {
@@ -135,10 +150,9 @@ func processLoop(f *Func, scc *SCC, outer *loop, b2l []*loop, loops *[]*loop, sa
 			if !sub.IsReducible() {
 				*sawIrred = true
 			}
-			// Nested loop
-			processLoop(f, sub, l, b2l, loops, sawIrred)
+			processLoop(f, w, sub, l, b2l, loops, sawIrred, debug)
 		} else {
-			// Trivial SCC: blocks belong to current loop
+			// Trivial SCC: assign to current loop
 			for _, b := range sub.Blocks {
 				if b2l[b.ID] == nil {
 					b2l[b.ID] = l

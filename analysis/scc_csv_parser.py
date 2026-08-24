@@ -29,7 +29,7 @@ class SCCRow(NamedTuple):
 
 def parse_line(line: str) -> SCCRow | None:
     """Parse a single CSV line, handling commas in function names.
-    
+
     Returns SCCRow or None if line doesn't match expected format.
     """
     m = _LINE_PATTERN.match(line.strip())
@@ -45,11 +45,11 @@ def parse_line(line: str) -> SCCRow | None:
 
 def iter_scc_rows(path: Path, pattern: str = "*_scc.csv") -> Iterator[tuple[Path, int, SCCRow]]:
     """Iterate over all matching CSV files, yielding (file, line_num, row).
-    
+
     Args:
         path: Directory to search, or a single file
         pattern: Glob pattern for files (ignored if path is a file)
-        
+
     Yields:
         (file_path, 1-indexed line number, SCCRow)
     """
@@ -57,7 +57,7 @@ def iter_scc_rows(path: Path, pattern: str = "*_scc.csv") -> Iterator[tuple[Path
         files = [path]
     else:
         files = sorted(path.glob(pattern))
-    
+
     for f in files:
         with open(f, 'r', encoding='utf-8', errors='replace') as fh:
             for i, line in enumerate(fh, start=1):
@@ -68,7 +68,7 @@ def iter_scc_rows(path: Path, pattern: str = "*_scc.csv") -> Iterator[tuple[Path
 
 def parse_scc_components(structure: str) -> list[list[str]]:
     """Parse SCC structure string into component lists.
-    
+
     Example: '[[b1] [b6 b4 b10] [b11]]' -> [['b1'], ['b6', 'b4', 'b10'], ['b11']]
     """
     groups = _BRACKET_GROUP_RE.findall(structure)
@@ -82,7 +82,7 @@ def parse_scc_components(structure: str) -> list[list[str]]:
 
 def parse_scc_sizes(structure: str) -> list[int]:
     """Parse SCC structure string into component sizes.
-    
+
     Example: '[[b1] [b6 b4 b10] [b11]]' -> [1, 3, 1]
     """
     return [len(c) for c in parse_scc_components(structure)]
