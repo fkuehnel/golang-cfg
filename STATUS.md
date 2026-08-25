@@ -39,8 +39,9 @@ leaves this repo without its provenance attached.
 
 | item | status | evidence |
 |---|---|---|
-| All December 2025 timing numbers | **UNVERIFIED** | laptop, batched arms, effect size 2-3% below the noise floor. Not reproducible; hardware no longer available for the purpose |
-| Benchmark harness design | designed, **not built** | design recorded in the working repository, not published here |
+| All December 2025 timing numbers | **SUPERSEDED, and one was wrong** | re-measured on a quiet VM. The acyclic claim holds directionally but is smaller than stated. The nested-loop claim that SCC is far slower and worsens with depth is **contradicted**: `Nested_10` is 35.8% *faster*, not 79% slower |
+| Benchmark harness | **BUILT and run** | design recorded in the working repository, not published here |
+| Benchmark results | **VERIFIED** | `vmbench/results/20260824T190007/`, 20 samples per benchmark per arm, interleaved with reversed order on alternate rounds, pinned core, GOMAXPROCS=1 |
 | `regalloc_bench_test.go` is a stable instrument | **VERIFIED** | byte-identical across all three copies, md5 `beaa0068531f18dbf8b14c18cf96a5c6`, 1900 lines |
 | Variant files are drop-in for one bounded region | **VERIFIED** | `regalloc_master.go` is byte-identical to baseline `regalloc.go` lines 2827-3227 |
 

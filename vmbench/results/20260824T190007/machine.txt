@@ -1,0 +1,12 @@
+date:        2026-08-25T00:22:19Z
+host:        liverange-bench
+machine:     c4-highcpu-8
+cpu:         INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+cores:       4  threads/core: 1
+kernel:      6.1.0-52-cloud-amd64
+pinned core: 2   GOMAXPROCS=1
+rounds:      21 (round 0 discarded)
+arm baseline:      ad91f5d241f3b8e85dc866d0087c3f13af96ef33
+arm acyclic:      aefa8b5a687d00fff2e47156581367812f4f11dd
+arm scc:      075026cace52ef9c3defd096b92f96d071c0df7b
+bench md5:   beaa0068531f18dbf8b14c18cf96a5c6
