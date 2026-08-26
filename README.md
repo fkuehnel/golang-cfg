@@ -9,11 +9,15 @@ and to `cfg_realworld.pdf` in this directory.
 
 ## Start here
 
-**[`STATUS.md`](STATUS.md)** is the inventory: what is verified, what is only
-partially true, what is reproduced as broken, and what is merely believed. Every
-row records how it was checked. It is deliberately candid, including about this
-work's own claims -- several things previously treated as results are marked
-UNVERIFIED there, and the reasons are given.
+**[`CONCLUSIONS.md`](CONCLUSIONS.md)** is the closing summary: why plain
+postorder iteration wins on real control-flow graphs, what the corpus census
+showed, the correctness lesson about convergence caps, and the measurement
+lessons learned the hard way.
+
+**[`STATUS.md`](STATUS.md)** is the inventory behind it: what is verified, what
+is only partially true, what is reproduced as broken, and what is merely
+believed. Every row records how it was checked. It is deliberately candid,
+including about this work's own claims.
 
 ## Layout
 
