@@ -1,0 +1,17 @@
+date:        2026-08-25T19:38:31Z
+host:        liverange-bench
+machine:     c4-highcpu-8
+cpu:         INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+cores:       2  threads/core: 1
+kernel:      6.1.0-52-cloud-amd64
+cmdline:     BOOT_IMAGE=/boot/vmlinuz-6.1.0-52-cloud-amd64 root=PARTUUID=e0c3e0fa-424a-438b-98e0-d8b92dbdfc3a ro console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0 isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3 intel_iommu=off
+pinned core: 2   GOMAXPROCS=1
+rounds:      21 (round 0 discarded)
+arm base128: dir=arm-128base threshold=n/a (upstream)
+arm thr2: dir=b128s threshold=2
+arm thr3: dir=b128t3 threshold=3
+arm thr5: dir=b128t5 threshold=5
+bench md5:   a279eda76cd70b056988c0b6170a65e8
+arm diffs vs b128s (should be the threshold line only):
+  b128t3: 2 changed lines
+  b128t5: 2 changed lines

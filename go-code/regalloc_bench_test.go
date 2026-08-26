@@ -490,23 +490,30 @@ func buildIrreducibleSimple(tb testing.TB) *Func {
 	return fun.f
 }
 
-// buildIrreducibleDiamond creates an irreducible diamond pattern:
+// buildIrreducibleDiamond creates an irreducible diamond:
 //
-//	  entry
-//	  /   \
-//	 ▼     ▼
-//	L1     R1
-//	 |\   /|
-//	 | \ / |
-//	 |  X  |      <- Cross edges create irreducibility
-//	 | / \ |
-//	 ▼/   \▼
-//	L2     R2
-//	 \     /
-//	  ▼   ▼
-//	  exit
+//	      entry
+//	      /   \
+//	     ▼     ▼
+//	  ┌─► L1     R1 ◄─┐
+//	  │   |\   /|    │
+//	  │   | \ / |    │
+//	  │   |  X  |    │   <- cross edges L1→R2, R1→L2
+//	  │   | / \ |    │
+//	  │   ▼/   \▼    │
+//	  └── L2     R2 ──┘   <- back edges L2→L1, R2→R1
+//	       \     /
+//	        ▼   ▼
+//	        exit
 //
-// The cross edges (L1→R2, R1→L2) create two irreducible regions.
+// {L1, R1, L2, R2} form ONE strongly connected component, entered from `entry`
+// at TWO distinct blocks (L1 and R1). No single block dominates the region, so
+// it has no header and is irreducible.
+//
+// NOTE: the back edges L2→L1 and R2→R1 are what make this a cycle. A previous
+// version of this function had only the forward cross edges and was therefore a
+// DAG -- `HasIrreducible` correctly reported false for it. Crossing edges alone
+// do not create irreducibility; a cycle with two entry points does.
 func buildIrreducibleDiamond(tb testing.TB) *Func {
 	c := testConfig(tb)
 	intType := c.config.Types.Int64
@@ -517,27 +524,31 @@ func buildIrreducibleDiamond(tb testing.TB) *Func {
 			Valu("mem", OpInitMem, types.TypeMem, 0, nil),
 			Valu("v0", OpConst64, intType, 0, nil),
 			Valu("cond0", OpConstBool, boolType, 1, nil),
-			If("cond0", "L1", "R1")),
+			If("cond0", "L1", "R1")), // TWO entries into the cycle
 
 		Bloc("L1",
-			Valu("vl1", OpAdd64, intType, 0, nil, "v0", "v0"),
+			Valu("phi_l1", OpPhi, intType, 0, nil, "v0", "vl2"), // From entry, from L2
+			Valu("vl1", OpAdd64, intType, 0, nil, "phi_l1", "v0"),
 			Valu("cond_l1", OpConstBool, boolType, 1, nil),
 			If("cond_l1", "L2", "R2")), // L1 can go to BOTH L2 and R2
 
 		Bloc("R1",
-			Valu("vr1", OpAdd64, intType, 0, nil, "v0", "v0"),
+			Valu("phi_r1", OpPhi, intType, 0, nil, "v0", "vr2"), // From entry, from R2
+			Valu("vr1", OpAdd64, intType, 0, nil, "phi_r1", "v0"),
 			Valu("cond_r1", OpConstBool, boolType, 1, nil),
 			If("cond_r1", "R2", "L2")), // R1 can go to BOTH R2 and L2
 
 		Bloc("L2",
 			Valu("phi_l2", OpPhi, intType, 0, nil, "vl1", "vr1"), // From L1, R1
 			Valu("vl2", OpAdd64, intType, 0, nil, "phi_l2", "v0"),
-			Goto("exit")),
+			Valu("cond_l2", OpConstBool, boolType, 1, nil),
+			If("cond_l2", "L1", "exit")), // back edge L2 -> L1
 
 		Bloc("R2",
 			Valu("phi_r2", OpPhi, intType, 0, nil, "vl1", "vr1"), // From L1, R1
 			Valu("vr2", OpAdd64, intType, 0, nil, "phi_r2", "v0"),
-			Goto("exit")),
+			Valu("cond_r2", OpConstBool, boolType, 1, nil),
+			If("cond_r2", "R1", "exit")), // back edge R2 -> R1
 
 		Bloc("exit",
 			Exit("mem")))

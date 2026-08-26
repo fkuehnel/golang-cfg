@@ -1,0 +1,5 @@
+BUILD OK    base     thr=none  174s  os=OK std=OK(22204ms)  go version go1.28-devel_49178db21a Mon Aug 24 17:53:01 2026 -0700 linux/amd64
+BUILD OK    aclonly  thr=none  171s  os=OK std=OK(21906ms)  go version go1.28-devel_b9d4617b68 Tue Aug 25 03:22:33 2026 +0000 linux/amd64
+BUILD OK    sccT2    thr=2     167s  os=OK std=OK(21527ms)  go version go1.28-devel_7472984c5c Tue Aug 25 03:29:01 2026 +0000 linux/amd64
+BUILD OK    sccT3    thr=3     167s  os=OK std=OK(21711ms)  go version go1.28-devel_7472984c5c Tue Aug 25 03:29:01 2026 +0000 linux/amd64
+BUILD OK    sccT5    thr=5     165s  os=OK std=OK(21569ms)  go version go1.28-devel_7472984c5c Tue Aug 25 03:29:01 2026 +0000 linux/amd64

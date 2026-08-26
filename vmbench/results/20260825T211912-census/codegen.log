@@ -1,0 +1,129 @@
+arms with a working toolchain: base aclonly sccT2 sccT3 sccT5
+--- digesting base ---
+    33948 functions
+--- digesting aclonly ---
+    33948 functions
+--- digesting sccT2 ---
+    33948 functions
+--- digesting sccT3 ---
+    33948 functions
+--- digesting sccT5 ---
+    33948 functions
+
+=============== CODEGEN COMPARISON (vs base) ===============
+arm             funcs only-in-base  only-in-arm    differing
+base            33948            0            0 strict=0 instr=0
+aclonly         33948            0            0 strict=27 instr=27
+sccT2           33948            0            0 strict=97 instr=97
+sccT3           33948            0            0 strict=37 instr=37
+sccT5           33948            0            0 strict=24 instr=24
+
+=== first 25 functions whose INSTRUCTIONS differ, per arm ===
+--- aclonly ---
+    compress/zlib.Resetter.Reset
+    context.(*valueCtx).Err
+    crypto/aes.(*KeySizeError).Error
+    crypto/internal/constanttime.boolToUint8
+    crypto/internal/entropy.Depleted
+    crypto/internal/fips140deps/cpu.init
+    crypto/internal/fips140deps/time.HighPrecisionNow
+    crypto/internal/fips140hash.Unwrap
+    crypto/internal/fips140hash.sha3Unwrap
+    crypto/internal/fips140only.ApprovedRandomReader
+    crypto/internal/randutil.MaybeReadByte
+    encoding/json/jsontext.(*export).PutStreamingEncoder
+    internal/saferio.SliceCapWithSize
+    internal/testhash.newRandReader
+    slices.Insert[[]uint8,uint8]
+    sync.OnceFunc.func1#FzM7FbSlr9E=#.1.1
+    sync.OnceFunc.func1#G15e/Si4sdo=#.1.1
+    sync.OnceFunc.func1#euRt8709Xpg=#.1.1
+    type:.eq.M12K4M12
+    type:.eq.M57K7M32
+    type:.eq.M761K3M20
+    type:.eq.M9K7M16
+    type:.eq.SM8
+    type:.eq.SM9
+    type:.eq.[16FFFFFFFF]
+    (total 27)
+--- sccT2 ---
+    compress/bzip2.(*reader).readBlock
+    compress/flate.(*fastEncL1).encode
+    compress/flate.(*fastEncL2).encode
+    compress/flate.(*fastEncL3).encode
+    compress/zlib.Resetter.Reset
+    crypto/des.initFeistelBox
+    crypto/internal/constanttime.boolToUint8
+    crypto/internal/entropy.Depleted
+    crypto/internal/fips140deps/cpu.init
+    crypto/internal/fips140hash.sha3Unwrap
+    crypto/internal/fips140only.ApprovedRandomReader
+    crypto/internal/randutil.MaybeReadByte
+    crypto/rsa.GenerateMultiPrimeKey
+    crypto/sha256.Sum224
+    crypto/sha512.Sum512_256
+    crypto/x509.CreateRevocationList
+    crypto/x509.alreadyInChain
+    crypto/x509.checkChainConstraints
+    crypto/x509.policiesValid
+    crypto/x509/pkix.RDNSequence.String
+    debug/pe.(*File).ImportedSymbols
+    encoding/json/jsontext.(*export).PutStreamingEncoder
+    encoding/json/v2.makeStructFields
+    fmt.(*ss).advance
+    go.shape.5614d73739c4cb953979c5b476501cda147b86386834ff88f636587787e0f1e9.reflect.uncommon
+    (total 97)
+--- sccT3 ---
+    compress/lzw.writer.WriteByte
+    compress/zlib.Resetter.Reset
+    context.(*valueCtx).Err
+    crypto/des.initFeistelBox
+    crypto/internal/constanttime.boolToUint8
+    crypto/internal/entropy.Depleted
+    crypto/internal/fips140deps/cpu.init
+    crypto/internal/fips140hash.Unwrap
+    crypto/internal/fips140hash.sha3Unwrap
+    crypto/internal/fips140only.ApprovedRandomReader
+    crypto/internal/randutil.MaybeReadByte
+    crypto/md5.block
+    crypto/sha512.Sum512_256
+    crypto/x509.policiesValid
+    encoding/json/jsontext.(*export).PutStreamingEncoder
+    fmt.(*ss).advance
+    go/doc.findDeclsAndUnresolved
+    image/jpeg.(*decoder).processDHT
+    image/jpeg.(*decoder).processSOS
+    image/jpeg.(*decoder).reconstructBlock
+    internal/runtime/gc/internal/gen.(*Func).cse
+    internal/testhash.newRandReader
+    net/http/internal/httpcommon.EncodeHeaders.func1
+    regexp.input.step
+    slices.Insert[[]uint8,uint8]
+    (total 37)
+--- sccT5 ---
+    bufio.(*ReadWriter).writeBuf
+    compress/lzw.writer.WriteByte
+    compress/zlib.Resetter.Reset
+    crypto/internal/constanttime.boolToUint8
+    crypto/internal/entropy.Depleted
+    crypto/internal/fips140deps/cpu.init
+    crypto/internal/fips140deps/time.HighPrecisionNow
+    crypto/internal/fips140hash.sha3Unwrap
+    crypto/md5.block
+    encoding/json/internal/jsonopts.(*DepthLimit).JSONOptions
+    encoding/json/jsontext.(*export).PutStreamingEncoder
+    internal/saferio.SliceCapWithSize
+    internal/testhash.newRandReader
+    regexp.input.step
+    regexp/syntax.(*ranges).Swap
+    sync.OnceFunc.func1#G15e/Si4sdo=#.1.1
+    type:.eq.M122K2M48
+    type:.eq.M12K4M12
+    type:.eq.M12K4M8
+    type:.eq.M24E
+    type:.eq.M32SM1
+    type:.eq.SM8
+    type:.eq.[16SS]
+    type:.eq.[2EE]
+    (total 24)
+CODEGEN_DONE 21:14:27

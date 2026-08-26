@@ -1,0 +1,248 @@
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    7069	    147085 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   20770	     57188 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    4230	    283800 ns/op
+BenchmarkComputeLive_Loop_10                   	  146167	      7927 ns/op
+BenchmarkComputeLive_Loop_100                  	   21786	     54967 ns/op
+BenchmarkComputeLive_Nested_3                  	  113883	     10249 ns/op
+BenchmarkComputeLive_Nested_5                  	   57450	     20714 ns/op
+BenchmarkComputeLive_Nested_10                 	   14662	     81628 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   95410	     12511 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   50906	     23362 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   40779	     29075 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  392596	      2731 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  319286	      3497 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  276580	      4092 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  189304	      6170 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  118604	      9992 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  203402	      5730 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  124212	      9558 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  185829	      6262 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  111204	     10420 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  191227	      6067 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  251394	      4512 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  113398	     10418 ns/op
+BenchmarkComputeLive_HeapSort                  	   26673	     45218 ns/op
+BenchmarkComputeLive_FloatPrec                 	   21280	     56821 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	34.250s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    7018	    145863 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   20840	     57162 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    4285	    284537 ns/op
+BenchmarkComputeLive_Loop_10                   	  140412	      7944 ns/op
+BenchmarkComputeLive_Loop_100                  	   21531	     55089 ns/op
+BenchmarkComputeLive_Nested_3                  	  113240	     10269 ns/op
+BenchmarkComputeLive_Nested_5                  	   57181	     20906 ns/op
+BenchmarkComputeLive_Nested_10                 	   14690	     81784 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   94938	     12431 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   50954	     23350 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   40701	     29329 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  390226	      2718 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  316614	      3526 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  276712	      4095 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  186272	      6154 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  118218	     10006 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  203048	      5699 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  123787	      9517 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  186709	      6219 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  112342	     10329 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  191203	      6039 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  252498	      4479 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  111865	     10326 ns/op
+BenchmarkComputeLive_HeapSort                  	   26708	     45111 ns/op
+BenchmarkComputeLive_FloatPrec                 	   21225	     56338 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	34.112s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    7060	    142113 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   20912	     57186 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    4054	    284291 ns/op
+BenchmarkComputeLive_Loop_10                   	  144110	      7988 ns/op
+BenchmarkComputeLive_Loop_100                  	   21816	     54990 ns/op
+BenchmarkComputeLive_Nested_3                  	  112683	     10264 ns/op
+BenchmarkComputeLive_Nested_5                  	   57388	     20854 ns/op
+BenchmarkComputeLive_Nested_10                 	   14739	     81417 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   95187	     12609 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   50796	     23411 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   40857	     29413 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  389792	      2739 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  317318	      3505 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  272710	      4087 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  189049	      6170 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  118479	      9979 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  201064	      5714 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  123564	      9562 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  186072	      6248 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  112411	     10522 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  191697	      6057 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  252530	      4494 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  112333	     10412 ns/op
+BenchmarkComputeLive_HeapSort                  	   26562	     45126 ns/op
+BenchmarkComputeLive_FloatPrec                 	   20899	     56754 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	34.125s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    8127	    147182 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   19640	     60605 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    3913	    290996 ns/op
+BenchmarkComputeLive_Loop_10                   	  145620	      7936 ns/op
+BenchmarkComputeLive_Loop_100                  	   21794	     55052 ns/op
+BenchmarkComputeLive_Nested_3                  	  114928	     10264 ns/op
+BenchmarkComputeLive_Nested_5                  	   56901	     20762 ns/op
+BenchmarkComputeLive_Nested_10                 	   14696	     81382 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   95024	     12503 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   50967	     23473 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   40876	     29114 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  390724	      2719 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  314263	      3522 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  276234	      4087 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  187503	      6187 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  116950	     10029 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  201867	      5842 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  123988	      9492 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  185749	      6215 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  113246	     10489 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  191617	      6027 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  251011	      4507 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  113394	     10456 ns/op
+BenchmarkComputeLive_HeapSort                  	   26682	     45065 ns/op
+BenchmarkComputeLive_FloatPrec                 	   21186	     56565 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	35.263s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    6824	    151809 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   19696	     60335 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    4054	    296931 ns/op
+BenchmarkComputeLive_Loop_10                   	  139269	      8363 ns/op
+BenchmarkComputeLive_Loop_100                  	   20788	     57569 ns/op
+BenchmarkComputeLive_Nested_3                  	  110421	     10777 ns/op
+BenchmarkComputeLive_Nested_5                  	   53919	     21855 ns/op
+BenchmarkComputeLive_Nested_10                 	   14238	     84191 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   90333	     12983 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   48496	     24517 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   38805	     30551 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  376008	      2851 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  300842	      3653 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  264130	      4273 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  180604	      6485 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  112317	     10388 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  193863	      5944 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  117216	      9883 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  175724	      6741 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  105613	     11033 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  182527	      6355 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  234324	      4783 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  107720	     11123 ns/op
+BenchmarkComputeLive_HeapSort                  	   25233	     46757 ns/op
+BenchmarkComputeLive_FloatPrec                 	   20576	     58825 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	34.410s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    7779	    147894 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   19936	     60211 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    3872	    295580 ns/op
+BenchmarkComputeLive_Loop_10                   	  137488	      8382 ns/op
+BenchmarkComputeLive_Loop_100                  	   20737	     57742 ns/op
+BenchmarkComputeLive_Nested_3                  	  111176	     10837 ns/op
+BenchmarkComputeLive_Nested_5                  	   54658	     21786 ns/op
+BenchmarkComputeLive_Nested_10                 	   14216	     84082 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   89492	     12951 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   48595	     24378 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   39039	     30340 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  375303	      2849 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  303985	      3619 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  262903	      4245 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  180396	      6389 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  111598	     10357 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  193568	      5930 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  117646	      9840 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  179918	      6596 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  107503	     10959 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  182307	      6357 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  238088	      4744 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  106963	     10996 ns/op
+BenchmarkComputeLive_HeapSort                  	   26137	     46626 ns/op
+BenchmarkComputeLive_FloatPrec                 	   20574	     58307 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	35.307s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    6852	    151400 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   20035	     59850 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    4046	    295603 ns/op
+BenchmarkComputeLive_Loop_10                   	  138049	      8374 ns/op
+BenchmarkComputeLive_Loop_100                  	   20815	     57691 ns/op
+BenchmarkComputeLive_Nested_3                  	  110709	     10729 ns/op
+BenchmarkComputeLive_Nested_5                  	   55135	     21742 ns/op
+BenchmarkComputeLive_Nested_10                 	   14252	     84167 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   90793	     12872 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   49041	     24357 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   39261	     30258 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  371156	      2851 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  304328	      3627 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  260946	      4298 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  177384	      6367 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  114322	     10301 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  195243	      5900 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  118735	      9762 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  172846	      6569 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  106921	     11025 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  181909	      6349 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  241666	      4761 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  108104	     11165 ns/op
+BenchmarkComputeLive_HeapSort                  	   25825	     46273 ns/op
+BenchmarkComputeLive_FloatPrec                 	   20252	     58749 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	34.355s
+goos: linux
+goarch: amd64
+pkg: cmd/compile/internal/ssacompile
+cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+BenchmarkComputeLive_Acyclic_500               	    7194	    146438 ns/op
+BenchmarkComputeLive_AcyclicDense_100x5        	   19819	     60141 ns/op
+BenchmarkComputeLive_AcyclicDense_200x20       	    3831	    294588 ns/op
+BenchmarkComputeLive_Loop_10                   	  137920	      8449 ns/op
+BenchmarkComputeLive_Loop_100                  	   20822	     57470 ns/op
+BenchmarkComputeLive_Nested_3                  	  108951	     10789 ns/op
+BenchmarkComputeLive_Nested_5                  	   54391	     21924 ns/op
+BenchmarkComputeLive_Nested_10                 	   14112	     83999 ns/op
+BenchmarkComputeLive_NestedDense_3x5           	   90916	     12966 ns/op
+BenchmarkComputeLive_NestedDense_5x3           	   48781	     24403 ns/op
+BenchmarkComputeLive_NestedDense_5x20          	   39211	     30447 ns/op
+BenchmarkComputeLive_Irreducible_Simple        	  375534	      2878 ns/op
+BenchmarkComputeLive_Irreducible_Diamond       	  304808	      3613 ns/op
+BenchmarkComputeLive_Irreducible_Loop5         	  259885	      4261 ns/op
+BenchmarkComputeLive_Irreducible_Loop10        	  178424	      6415 ns/op
+BenchmarkComputeLive_Irreducible_Loop20        	  113919	     10345 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry5   	  195295	      5909 ns/op
+BenchmarkComputeLive_Irreducible_MultiEntry10  	  119278	      9815 ns/op
+BenchmarkComputeLive_Irreducible_Nested5       	  177670	      6615 ns/op
+BenchmarkComputeLive_Irreducible_Nested10      	  108958	     11114 ns/op
+BenchmarkComputeLive_Irreducible_WithReducible 	  179178	      6425 ns/op
+BenchmarkComputeLive_Irreducible_Chain3        	  238754	      4742 ns/op
+BenchmarkComputeLive_Irreducible_Chain10       	  106783	     11039 ns/op
+BenchmarkComputeLive_HeapSort                  	   25290	     47121 ns/op
+BenchmarkComputeLive_FloatPrec                 	   20216	     58519 ns/op
+PASS
+ok  	cmd/compile/internal/ssacompile	34.358s

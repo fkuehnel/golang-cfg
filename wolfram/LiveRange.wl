@@ -47,6 +47,9 @@ ThreePassSolution::usage    = "ThreePassSolution[start, graph, entry, ctx] runs 
 
 FindDifference::usage = "FindDifference[a, b] returns per-block symmetric differences of value identities, omitting blocks that agree. An empty Association means the two solutions match.";
 
+SccSweepSolution::usage = "SccSweepSolution[case] solves liveness the way the Go compiler's computeLiveWithSccs does: SCC condensation in reverse topological order, singleton SCCs visited once, non-trivial SCCs iterated with alternating entryward/exitward confined-DFS orders until quiescent. SccSweepSolution[case, cap] stops each SCC after at most cap sweeps, modeling the removed constant cap. Returns <|\"State\", \"SCCs\"|> where SCCs carries per-component sweep counts.";
+SccSweepTrace::usage = "SccSweepTrace[case] returns, per changing sweep of each non-trivial SCC, the order used and the values newly added at each block -- the propagation frontier that shows why an SCC needs the number of sweeps it does.";
+
 Begin["`Private`"];
 
 (* ---------- representation ---------- *)
@@ -156,6 +159,90 @@ FindDifference[a_Association, b_Association] := DeleteCases[
       ValueNames[LookupOrEmpty[b, #]]] &,
     Union[Keys[a], Keys[b]]],
   {}];
+
+
+(* ---------- the compiler's SCC sweep scheme ----------
+
+   The Wolfram twin of computeLiveWithSccs + sccAlternatingOrdersDFS, sharing
+   PassFunction with the other solvers so any disagreement is attributable to
+   ORDER, never to the transfer function. Validated: converged output matches
+   the compiler dump exactly on both corpus cases (see tests).
+
+   Fidelity notes:
+   - Seeds are normalized to bare identities first; un-normalized Val->dist
+     rules dodge the Defs subtraction and propagate as zombies.
+   - Sweep-change detection compares KeySorted states: PassFunction merges via
+     Append, so key order depends on traversal order, and the alternating
+     orders would otherwise never compare SameQ.
+   - The SCC's start block is the first entry-edge target (the function entry
+     for the component containing it); the compiler uses its Kosaraju leader.
+     Sweep counts are insensitive to this on the corpus, but could differ by
+     one on other graphs. *)
+
+succsOf[g_, v_] := Last /@ EdgeList[g, DirectedEdge[v, _]];
+
+sccPO[g_, blocks_List, start_] := Module[{inSCC, seen, order, visit},
+  inSCC = AssociationThread[blocks -> True]; seen = <||>; order = {};
+  visit[v_] := (seen[v] = True;
+    Scan[If[TrueQ[inSCC[#]] && ! TrueQ[seen[#]], visit[#]] &, succsOf[g, v]];
+    AppendTo[order, v]);
+  visit[start]; order];
+
+alternatingOrders[g_, blocks_List, entryB_] := Module[{ew, xw, rest},
+  Which[
+   Length[blocks] == 1, {blocks, blocks},
+   Length[blocks] == 2,
+     rest = First[DeleteCases[blocks, entryB]];
+     {{rest, entryB}, {entryB, rest}},
+   True,
+     ew = sccPO[g, blocks, entryB];
+     xw = sccPO[g, blocks, First[ew]];
+     {ew, xw}]];
+
+sccEntry[g_, blocks_List, fentry_] := Module[{outside, ins},
+  If[MemberQ[blocks, fentry], Return[fentry]];
+  outside = Complement[VertexList[g], blocks];
+  ins = Select[EdgeList[g], MemberQ[outside, First[#]] && MemberQ[blocks, Last[#]] &];
+  If[ins === {}, First[blocks], Last[First[ins]]]];
+
+canonicalState[s_Association] := Sort /@ KeySort[s];
+normalizeSeed[a_Association] := Union[ValueNames[#]] & /@ a;
+
+sccScan[d_Association, cap_, want_] := Module[
+  {g, ctx, step, comps, cidx, condEdges, topo, state, recs = {}, trace = {}, fentry},
+  g = d["Graph"]; ctx = d["Context"]; fentry = d["Entry"];
+  step = PassFunction[ReverseGraph[g], ctx];
+  comps = ConnectedComponents[g];
+  cidx = Association @@ Flatten[MapIndexed[Thread[#1 -> First[#2]] &, comps]];
+  condEdges = DeleteDuplicates[DeleteCases[
+     EdgeList[g] /. DirectedEdge[a_, b_] :> DirectedEdge[cidx[a], cidx[b]],
+     DirectedEdge[a_, a_]]];
+  topo = TopologicalSort[Graph[Range[Length[comps]], condEdges]];
+  state = If[AssociationQ[d["Start"]], normalizeSeed[d["Start"]], <||>];
+  Do[Module[{blocks = comps[[ci]], eb, ew, xw, sweeps = 0, newState, added},
+     If[Length[blocks] == 1 && ! MemberQ[succsOf[g, First[blocks]], First[blocks]],
+       state = step[state, First[blocks]],
+       eb = sccEntry[g, blocks, fentry];
+       {ew, xw} = alternatingOrders[g, blocks, eb];
+       While[True,
+         newState = Fold[step, state, If[EvenQ[sweeps], ew, xw]];
+         If[canonicalState[newState] === canonicalState[state], Break[]];
+         If[want === "Trace",
+           added = Association @@ DeleteCases[
+              Table[bb -> Complement[Union[ValueNames[Lookup[newState, bb, {}]]],
+                                     Union[ValueNames[Lookup[state, bb, {}]]]],
+                {bb, blocks}], _ -> {}];
+           AppendTo[trace, <|"Sweep" -> sweeps + 1,
+              "Order" -> If[EvenQ[sweeps], "entryward", "exitward"],
+              "OrderList" -> If[EvenQ[sweeps], ew, xw], "Added" -> added|>]];
+         state = newState; sweeps++;
+         If[sweeps >= cap, Break[]]];
+       AppendTo[recs, <|"Blocks" -> blocks, "Entry" -> eb, "Sweeps" -> sweeps|>]]],
+    {ci, Reverse[topo]}];
+  If[want === "Trace", trace, <|"State" -> state, "SCCs" -> recs|>]];
+
+SccSweepSolution[d_Association, cap_ : Infinity] := sccScan[d, cap, "State"];
+SccSweepTrace[d_Association] := sccScan[d, Infinity, "Trace"];
 
 End[];
 EndPackage[];

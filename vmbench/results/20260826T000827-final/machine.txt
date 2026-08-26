@@ -1,0 +1,16 @@
+date:        2026-08-25T21:46:48Z
+host:        liverange-bench   machine: c4-highcpu-8
+cpu:         INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+kernel:      6.1.0-52-cloud-amd64   cmdline: BOOT_IMAGE=/boot/vmlinuz-6.1.0-52-cloud-amd64 root=PARTUUID=e0c3e0fa-424a-438b-98e0-d8b92dbdfc3a ro console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0 isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3 intel_iommu=off
+bench core:  2 (GOMAXPROCS=1)   std cores: 2,3 (GOMAXPROCS=2, -p 2)
+rounds:      micro=21 (r0 discarded)  qualify pairs=8  std=9 (r0 discarded)
+irq[2] at start: 3213104
+arm base: dir=arm-128base commit=49178db21a thr=none diffvsref=0
+arm sccT2: dir=b128s commit=7472984c5c thr=2 diffvsref=960
+arm sccT3: dir=b128t3 commit=7472984c5c thr=3 diffvsref=960
+arm sccT5: dir=b128t5 commit=7472984c5c thr=5 diffvsref=960
+arm iterAll: dir=b128tinf commit=7472984c5c thr=32767 diffvsref=960
+arm sccAll: dir=b128tall commit=7472984c5c thr=2 diffvsref=960
+arm aclonly: dir=b128a commit=b9d4617b68 thr=none diffvsref=829
+bench md5:   6ecf446ab277114be596233facd485cb
+irq[2] at end: 7144349

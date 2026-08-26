@@ -1,0 +1,16 @@
+date:        2026-08-25T18:04:59Z
+host:        liverange-bench
+machine:     c4-highcpu-8
+cpu:         INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
+cores:       2  threads/core: 1
+kernel:      6.1.0-52-cloud-amd64
+cmdline:     BOOT_IMAGE=/boot/vmlinuz-6.1.0-52-cloud-amd64 root=PARTUUID=e0c3e0fa-424a-438b-98e0-d8b92dbdfc3a ro console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0 isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3 intel_iommu=off
+pinned core: 2 (interrupts: 1000998)   GOMAXPROCS=1
+rounds:      21 (round 0 discarded)
+arm base128: 49178db21a45a4cd6dbed533da2c05475a38574f
+arm aa128: 49178db21a45a4cd6dbed533da2c05475a38574f
+arm aap128: 49178db21a45a4cd6dbed533da2c05475a38574f
+arm fuse128: 9fdc1f8e26b8b8cd5a0bd6e62d9e5bbbf1e0140e
+arm scc128: 7472984c5cdbd9c64d0fa9023f4208f13ac7ad49
+aap128 note: base + zz_layout_pad.go, semantically identical, layout perturbed
+bench md5:   a279eda76cd70b056988c0b6170a65e8
